@@ -133,15 +133,11 @@
    ↓
 5. 填写表单字段
    ↓
-6. 提交前截图
+6. 执行提交
    ↓
-7. 执行提交
+7. 分析结果
    ↓
-8. 提交后截图
-   ↓
-9. 分析结果
-   ↓
-10. 返回处理报告
+8. 返回处理报告
 ```
 
 ## 输出格式
@@ -174,9 +170,7 @@
     "status": "success|failed|validation_error",
     "response_code": 200,
     "redirect_url": "/dashboard",
-    "error_message": null,
-    "screenshot_before": "/screenshots/form_before.png",
-    "screenshot_after": "/screenshots/form_after.png"
+    "error_message": null
   },
   "findings": [
     "表单无CSRF保护",

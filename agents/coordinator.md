@@ -106,6 +106,35 @@ Coordinator需要维护以下全局状态：
 - 导航失败：记录并跳过
 - 表单提交失败：记录错误，继续探索
 - 超时：终止当前操作，尝试其他路径
+- 上下文溢出：使用depth参数或filename参数控制MCP响应大小
+
+## 性能优化
+
+### 控制MCP响应大小
+
+Playwright MCP返回的页面快照可能非常大（50k+ tokens），需要主动控制：
+
+1. **浅层快照优先**: 使用`depth: 2`参数
+2. **截图为主**: 截图不占文本token，适合视觉分析
+3. **文件存储**: 使用`filename`参数将大响应存文件
+4. **按需获取**: 只在需要交互时获取快照
+
+### Scout Agent调用优化
+
+```json
+// 推荐：浅层快照 + 截图
+{
+  "task": "analyze_page",
+  "snapshot_depth": 2,
+  "save_screenshot": true
+}
+
+// 避免：完整快照直接返回
+{
+  "task": "analyze_page",
+  "full_snapshot": true  // 可能导致上下文溢出
+}
+```
 
 ## 输出格式
 

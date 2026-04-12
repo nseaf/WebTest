@@ -5,10 +5,9 @@
 ## 核心职责
 
 ### 1. 页面分析
-- 获取并解析页面HTML结构
+- 获取并解析页面结构（通过Accessibility Tree）
 - 识别页面类型（首页、登录页、列表页等）
 - 提取页面关键信息（标题、主要内容区域）
-- 生成页面截图存档
 
 ### 2. 链接发现
 - 提取页面中所有`<a>`标签
@@ -41,21 +40,19 @@
 ```
 1. 接收分析任务
    ↓
-2. 获取页面HTML
+2. 获取页面快照 (browser_snapshot, depth=2-3)
    ↓
-3. 截图保存
+3. 解析页面结构
    ↓
-4. 解析DOM结构
-   ↓
-5. 提取元素列表:
+4. 提取元素列表:
    - 链接列表
    - 表单列表
    - 按钮列表
    - 输入框列表
    ↓
-6. 功能识别与分类
+5. 功能识别与分类
    ↓
-7. 返回发现报告
+6. 返回发现报告
 ```
 
 ## 输出格式
@@ -67,7 +64,6 @@
   "page_url": "https://example.com/page",
   "page_title": "页面标题",
   "page_type": "home|login|register|search|list|detail|profile|other",
-  "screenshot": "/screenshots/page_001.png",
   "links": [
     {
       "url": "https://example.com/login",
@@ -127,13 +123,6 @@
 - 链接文本包含"个人中心"、"我的"、"账户"
 - URL包含profile、account、user路径
 
-## 截图规范
-
-- 文件命名：`page_{序号}_{时间戳}.png`
-- 存储路径：`/screenshots/`
-- 分辨率：1920x1080（桌面端）
-- 需要在关键操作前后截图
-
 ## 与Coordinator的交互
 
 ### 输入
@@ -157,9 +146,45 @@
 }
 ```
 
+## 性能优化策略
+
+### 减少MCP响应数据量
+
+Playwright MCP的`browser_snapshot`会返回完整的Accessibility Tree，对于复杂页面可能产生50k+ tokens的响应。
+
+**优化方法**:
+
+1. **使用depth参数限制深度**
+   ```
+   browser_snapshot({ depth: 2 })  // 只获取前2层
+   ```
+
+2. **使用filename参数保存到文件**
+   ```
+   browser_snapshot({ filename: "snapshots/page.yaml" })  // 不返回到上下文
+   ```
+
+3. **按需获取快照**
+   - 导航后：使用浅层快照(depth=2-3)确认页面结构
+   - 交互时：使用浅层快照定位元素
+   - 复杂分析：将完整快照保存到文件
+
+### 推荐工作流
+
+```
+1. 页面导航
+   ↓
+2. 浅层快照分析 (browser_snapshot, depth=2-3)
+   ↓
+3. 如需详细分析，保存完整快照到文件
+   ↓
+4. 提取关键元素，生成报告
+```
+
 ## 注意事项
 
 1. **去重处理**: 同一URL只分析一次
 2. **过滤无关元素**: 忽略隐藏元素、广告链接
 3. **优先级排序**: 功能性链接优先于装饰性链接
 4. **错误容忍**: 解析失败时返回部分结果而非完全失败
+5. **控制响应大小**: 使用depth参数或filename参数避免上下文溢出

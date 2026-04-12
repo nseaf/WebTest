@@ -159,8 +159,7 @@ const skipPatterns = [
   "depth": 1,
   "load_time_ms": 1234,
   "redirects": [],
-  "error": null,
-  "screenshot": "/screenshots/nav_001.png"
+  "error": null
 }
 ```
 
@@ -192,8 +191,7 @@ const waitStrategies = {
 {
   "timeout_ms": 30000,
   "on_timeout": {
-    "action": "screenshot_and_continue",
-    "screenshot_path": "/screenshots/timeout.png"
+    "action": "log_and_continue"
   }
 }
 ```
@@ -269,5 +267,4 @@ const waitStrategies = {
 1. **避免重复访问**: 使用URL规范化（去除hash、参数排序）进行去重
 2. **控制探索范围**: 不要超出目标域名
 3. **记录所有跳转**: 完整记录重定向链
-4. **截图留证**: 每次导航后截图保存
-5. **错误恢复**: 导航失败时能够恢复并继续
+4. **错误恢复**: 导航失败时能够恢复并继续

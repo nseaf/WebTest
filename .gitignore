@@ -1,8 +1,14 @@
 # Dependencies
 node_modules/
 
-# Screenshots (generated during testing)
-screenshots/*.png
+# Design documents (local only)
+DESIGN.md
+
+# Test results (project-specific, not committed)
+result/
+
+# Screenshots (暂不启用)
+screenshots/
 
 # IDE
 .idea/
@@ -24,3 +30,6 @@ memory/sessions/session_*.json
 # Temporary files
 *.tmp
 *.temp
+
+# Playwright MCP snapshots
+.playwright-mcp/
