@@ -146,6 +146,14 @@
 }
 ```
 
+## 数据存储
+
+发现的数据应存储到 `result/` 目录：
+
+- 页面记录: `result/pages.json`
+- 表单记录: `result/forms.json`
+- 链接记录: `result/links.json`
+
 ## 性能优化策略
 
 ### 减少MCP响应数据量

@@ -104,23 +104,32 @@ browser_take_screenshot({ fullPage: true, filename: "full.png" })
         └─────────┼─────────┘
                   ▼
          ┌────────────────┐
-         │  Memory Store  │
-         │ (sessions,     │
-         │  discoveries)  │
+         │  Result Store  │
+         │  (result/)     │
          └────────────────┘
 ```
 
 ### 数据存储结构
 
 ```
-memory/
-├── sessions/
-│   └── session_xxx.json    # 测试会话状态
-├── discoveries/
+WebTest/
+├── agents/                 # Agent定义 (提交git)
+├── memory/                 # 模板文件 (提交git)
+│   ├── sessions/
+│   │   └── session_template.json
+│   └── discoveries/
+│       ├── pages.json      # 空模板
+│       ├── forms.json      # 空模板
+│       └── links.json      # 空模板
+├── reports/                # 报告模板 (提交git)
+│   └── report_template.md
+├── result/                 # 测试结果 (不提交git)
+│   ├── session_xxx.json    # 测试会话状态
 │   ├── pages.json          # 发现的页面
 │   ├── forms.json          # 发现的表单
-│   └── links.json          # 发现的链接
-└── snapshots/              # 页面快照文件 (可选)
+│   ├── links.json          # 发现的链接
+│   └── xxx_report.md       # 测试报告
+└── ROADMAP.md              # 功能规划
 ```
 
 ---
@@ -132,3 +141,5 @@ memory/
 - 完成百度探索测试
 - 移除截图功能（暂不启用）
 - 添加性能优化策略文档
+- 重构数据存储结构：测试数据移至 `result/` 目录
+- 明确 `memory/` 和 `reports/` 只保留模板文件
