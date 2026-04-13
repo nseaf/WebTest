@@ -1,0 +1,46 @@
+{
+  "$schema": "vulnerabilities_schema",
+  "description": "安全测试发现的漏洞记录",
+  "vulnerabilities": [
+    {
+      "id": "vuln_001",
+      "type": "IDOR",
+      "url": "https://api.example.com/users/123",
+      "method": "GET",
+      "parameter": null,
+      "description": "越权访问：Guest用户可访问Admin用户的个人数据",
+      "evidence": {
+        "original_role": "admin",
+        "original_status": 200,
+        "replay_role": "guest",
+        "replay_status": 200,
+        "body_similarity": 0.95,
+        "sensitive_data_exposed": ["username", "email", "phone"]
+      },
+      "severity": "high",
+      "cvss_score": null,
+      "cwe_id": "CWE-639",
+      "owasp_category": "A01:2021 - Broken Access Control",
+      "discovered_at": "2026-04-13T10:00:00Z",
+      "history_entry_id": null,
+      "replay_id": null
+    }
+  ],
+  "statistics": {
+    "total": 0,
+    "by_severity": {
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0
+    },
+    "by_type": {
+      "IDOR": 0,
+      "XSS": 0,
+      "SQLI": 0,
+      "COMMAND_INJECTION": 0,
+      "CSRF": 0,
+      "OTHER": 0
+    }
+  }
+}
