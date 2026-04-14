@@ -1,0 +1,96 @@
+{
+  "$schema": "accounts_schema",
+  "description": "测试账号配置文件，定义不同角色的登录凭据和配置",
+  "accounts": [
+    {
+      "id": "admin_001",
+      "role": "admin",
+      "priority": 1,
+      "credentials": {
+        "username": "admin@example.com",
+        "password": "encrypted:base64_encoded_placeholder"
+      },
+      "login_config": {
+        "login_url": "https://example.com/login",
+        "username_selector": "#username",
+        "password_selector": "#password",
+        "submit_selector": "#login-btn",
+        "success_indicator": ".user-profile",
+        "failure_indicator": ".error-message"
+      },
+      "session_config": {
+        "session_timeout_seconds": 1800,
+        "keep_alive_interval_seconds": 300
+      },
+      "capabilities": ["read", "write", "delete", "admin_panel"],
+      "description": "管理员账号，具有完整权限"
+    },
+    {
+      "id": "user_001",
+      "role": "user",
+      "priority": 2,
+      "credentials": {
+        "username": "user@example.com",
+        "password": "encrypted:base64_encoded_placeholder"
+      },
+      "login_config": {
+        "login_url": "https://example.com/login",
+        "username_selector": "#username",
+        "password_selector": "#password",
+        "submit_selector": "#login-btn",
+        "success_indicator": ".user-profile",
+        "failure_indicator": ".error-message"
+      },
+      "session_config": {
+        "session_timeout_seconds": 1800,
+        "keep_alive_interval_seconds": 300
+      },
+      "capabilities": ["read", "write"],
+      "description": "普通用户账号，具有基本读写权限"
+    },
+    {
+      "id": "guest_001",
+      "role": "guest",
+      "priority": 3,
+      "credentials": {
+        "username": null,
+        "password": null
+      },
+      "login_config": {
+        "login_url": null,
+        "success_indicator": null
+      },
+      "session_config": {
+        "session_timeout_seconds": 3600
+      },
+      "capabilities": ["read"],
+      "description": "访客账号，无登录凭据，用于测试未授权访问"
+    }
+  ],
+  "captcha_config": {
+    "enabled": true,
+    "detection_selectors": [
+      "iframe[src*='captcha']",
+      ".captcha-container",
+      "#captcha",
+      "[class*='captcha']",
+      "img[alt*='captcha']",
+      "img[alt*='验证码']"
+    ],
+    "timeout_seconds": 60,
+    "notification_message": "检测到验证码，请手动完成验证后回复 'done' 继续"
+  },
+  "session_management": {
+    "check_interval_seconds": 60,
+    "relogin_on_expire": true,
+    "max_relogin_attempts": 3,
+    "session_indicators": {
+      "logged_in": [".user-profile", ".logout-btn", "[data-user-id]"],
+      "logged_out": [".login-btn", ".signin-link", "#login-form"]
+    }
+  },
+  "notes": {
+    "password_storage": "当前使用明文存储密码（base64编码占位符）。生产环境应使用环境变量或加密存储。",
+    "role_testing": "配置至少两种角色以支持越权测试（IDOR）"
+  }
+}

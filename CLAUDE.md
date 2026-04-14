@@ -8,13 +8,34 @@ AI-Agent Web渗透测试系统，采用层级式多Agent架构。系统自主探
 
 ## Agent 架构
 
-系统使用5个专业Agent，定义在 `agents/*.md` 中：
+系统使用6个专业Agent，定义在 `agents/*.md` 中：
 
-1. **Coordinator Agent** (`agents/coordinator.md`) - 主控制器，负责规划、调度和监控测试
-2. **Navigator Agent** (`agents/navigator.md`) - 处理页面导航和URL跟踪
-3. **Scout Agent** (`agents/scout.md`) - 分析页面结构，发现链接和表单
-4. **Form Agent** (`agents/form.md`) - 识别、填写和提交Web表单
-5. **Security Agent** (`agents/security.md`) - 执行安全测试（越权、注入）
+1. **Coordinator Agent** (`agents/coordinator.md`) - 主控制器，负责规划、调度、事件队列管理和人机交互代理
+2. **Navigator Agent** (`agents/navigator.md`) - 处理页面导航、URL跟踪、多窗口管理、会话状态监控
+3. **Scout Agent** (`agents/scout.md`) - 分析页面结构，发现链接、表单和API端点
+4. **Form Agent** (`agents/form.md`) - 识别、填写和提交Web表单，执行登录操作，验证码检测
+5. **Security Agent** (`agents/security.md`) - 执行安全测试（越权、注入），并行监控模式
+6. **Analyzer Agent** (`agents/analyzer.md`) - 分析重放结果，判断漏洞，生成探索建议
+
+### 架构图
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Coordinator Agent                                 │
+│                   (主控制器 + 事件调度中心)                                │
+└───────────────┬──────────────────────────┬─────────────────────────────┘
+                │                          │
+    ┌───────────┴───────────┐    ┌────────┴────────────┐
+    │   探索流水线 (串行)    │    │  安全测试 (并行)     │
+    │  Navigator→Scout→Form │    │  Security + Analyzer │
+    └───────────────────────┘    └──────────────────────┘
+                │                          │
+                └──────────┬───────────────┘
+                           ↓
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │  共享状态层: events.json | sessions.json | windows.json            │
+    └─────────────────────────────────────────────────────────────────────┘
+```
 
 ### 启动测试会话
 
@@ -40,6 +61,8 @@ AI-Agent Web渗透测试系统，采用层级式多Agent架构。系统自主探
 - `mcp__playwright__browser_click` - 点击元素
 - `mcp__playwright__browser_type` - 向输入框输入文本
 - `mcp__playwright__browser_fill_form` - 填写多个表单字段
+- `mcp__playwright__browser_network_requests` - 获取网络请求列表（API发现）
+- `mcp__playwright__browser_tabs` - 多标签页管理
 
 ### 性能优化
 
@@ -116,6 +139,8 @@ BurpBridge 是一个 Burp Suite 插件，通过 MCP 暴露 Burp 的能力给 AI 
 
 ```
 agents/               # Agent定义文件（提交git）
+config/               # 配置文件
+  accounts.json       # 账号配置模板
 memory/               # 模板文件（提交git）
   sessions/           # 会话模板
   discoveries/        # 空模板JSON文件
@@ -125,10 +150,44 @@ result/               # 测试输出（不提交git）
   pages.json          # 发现的页面
   forms.json          # 发现的表单
   links.json          # 发现的链接
+  apis.json           # 发现的API端点
+  events.json         # 事件队列
+  windows.json        # 窗口注册表
+  sessions.json       # 会话状态
   vulnerabilities.json # 发现的漏洞
   *_report_*.md       # 测试报告
 reports/              # 报告模板（提交git）
 ```
+
+## 关键特性
+
+### 登录态保持
+- Cookie管理和自动重新登录
+- 验证码检测和人机交互
+- 会话过期检测和处理
+
+### API发现
+- 分析网络请求，发现隐藏API
+- API模式识别（如 /api/users/{id}）
+- 敏感数据检测
+
+### 并行架构
+- Security Agent与探索Agent并行运行
+- 事件队列驱动的Agent通信
+- 实时漏洞发现
+
+### 多标签页支持
+- 多窗口多账号管理
+- 越权测试场景支持
+- 窗口状态注册表
+
+### 事件驱动通信
+- CAPTCHA_DETECTED: 验证码检测
+- SESSION_EXPIRED: 会话过期
+- LOGIN_FAILED: 登录失败
+- EXPLORATION_SUGGESTION: 探索建议
+- VULNERABILITY_FOUND: 漏洞发现
+- API_DISCOVERED: API发现
 
 ## 测试配置
 

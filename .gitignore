@@ -7,6 +7,9 @@ DESIGN.md
 # Test results (project-specific, not committed)
 result/
 
+# Config with sensitive data (user-specific)
+config/accounts.local.json
+
 # Screenshots (暂不启用)
 screenshots/
 
