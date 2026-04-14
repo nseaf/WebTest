@@ -1,9 +1,12 @@
 {
+  "env": {},
   "permissions": {
     "allow": [
       "mcp__playwright__*"
     ],
     "deny": []
   },
-  "env": {}
+  "enabledPlugins": {
+    "mongodb@claude-plugins-official": true
+  }
 }

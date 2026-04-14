@@ -15,6 +15,17 @@
         "BURP_BRIDGE_URL": "http://localhost:8090",
         "MONGO_URI": "mongodb://localhost:27017/"
       }
+    },
+    "mongodb": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "mongodb-mcp-server@latest"
+      ],
+      "env": {
+        "MDB_MCP_CONNECTION_STRING": "mongodb://localhost:27017"
+      }
     }
   }
 }
