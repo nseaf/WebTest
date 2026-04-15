@@ -8,5 +8,11 @@
   },
   "enabledPlugins": {
     "mongodb@claude-plugins-official": true
+  },
+  "mcpServers": {
+    "burpbridge": {
+        "type": "sse",
+        "url": "http://127.0.0.1:8091/mcp"
+    }
   }
 }

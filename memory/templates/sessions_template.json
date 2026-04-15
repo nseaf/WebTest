@@ -1,0 +1,22 @@
+{
+  "$schema": "sessions_schema",
+  "description": "账号会话状态管理",
+  "sessions": [],
+  "session_schema": {
+    "account_id": "admin_001|user_001|guest_001",
+    "role": "admin|user|guest",
+    "window_id": null,
+    "status": "active|expired|failed|pending",
+    "logged_in_at": null,
+    "last_activity_time": null,
+    "cookies": [],
+    "relogin_attempts": 0,
+    "max_relogin_attempts": 3
+  },
+  "status_definitions": {
+    "active": "会话有效，可正常使用",
+    "expired": "会话已过期，需要重新登录",
+    "failed": "登录失败",
+    "pending": "等待登录"
+  }
+}

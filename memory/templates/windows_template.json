@@ -1,0 +1,22 @@
+{
+  "$schema": "windows_schema",
+  "description": "浏览器窗口注册表，管理多标签页和多账号",
+  "windows": [],
+  "window_schema": {
+    "window_id": "window_XXX",
+    "tab_index": 0,
+    "assigned_account": null,
+    "purpose": "primary_exploration|idor_testing|secondary_exploration|monitoring",
+    "status": "active|idle|waiting_captcha|expired",
+    "login_status": "logged_in|logged_out|unknown",
+    "cookies_valid": false,
+    "created_at": "ISO8601",
+    "last_activity": "ISO8601"
+  },
+  "purpose_definitions": {
+    "primary_exploration": "主探索窗口，用于发现页面和功能",
+    "idor_testing": "越权测试窗口，用于重放请求测试越权漏洞",
+    "secondary_exploration": "次级探索窗口，用于并行探索",
+    "monitoring": "监控窗口，用于观察状态变化"
+  }
+}

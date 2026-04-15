@@ -1,0 +1,21 @@
+{
+  "$schema": "events_schema",
+  "description": "Agent间通信事件队列",
+  "events": [],
+  "event_schema": {
+    "event_id": "evt_YYYYMMDD_HHMMSS_XXX",
+    "event_type": "CAPTCHA_DETECTED|SESSION_EXPIRED|LOGIN_FAILED|EXPLORATION_SUGGESTION|VULNERABILITY_FOUND|API_DISCOVERED|FORM_SUBMISSION_ERROR",
+    "source_agent": "Coordinator|Navigator|Scout|Form|Security|Analyzer",
+    "priority": "critical|high|normal",
+    "status": "pending|processing|handled|failed",
+    "payload": {},
+    "created_at": "ISO8601",
+    "handled_at": null,
+    "result": null
+  },
+  "priority_order": {
+    "critical": "立即处理，暂停其他任务",
+    "high": "尽快处理，插队到任务队列前端",
+    "normal": "正常排队处理"
+  }
+}

@@ -9,12 +9,8 @@
       }
     },
     "burpbridge": {
-      "command": "python",
-      "args": ["/Users/fizz/projects/BurpBridge/burp_mcp_server.py"],
-      "env": {
-        "BURP_BRIDGE_URL": "http://localhost:8090",
-        "MONGO_URI": "mongodb://localhost:27017/"
-      }
+      "type": "sse",
+      "url": "http://127.0.0.1:8091/mcp"
     },
     "mongodb": {
       "type": "stdio",

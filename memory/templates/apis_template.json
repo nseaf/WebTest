@@ -1,0 +1,25 @@
+{
+  "$schema": "apis_schema",
+  "description": "发现的API端点记录",
+  "apis": [],
+  "api_schema": {
+    "api_id": "api_XXX",
+    "url": "",
+    "method": "GET|POST|PUT|DELETE|PATCH",
+    "pattern_detected": null,
+    "headers": {},
+    "parameters": [],
+    "response_status": null,
+    "response_type": null,
+    "sensitive_fields_found": [],
+    "discovered_at": "ISO8601",
+    "source_page": null,
+    "tested": false,
+    "vulnerabilities": []
+  },
+  "pattern_examples": {
+    "/api/users/{id}": "数字ID参数",
+    "/api/users/{uuid}": "UUID参数",
+    "/api/posts/{id}/comments": "嵌套资源"
+  }
+}

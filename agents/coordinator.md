@@ -49,6 +49,11 @@
 - 管理Agent间的依赖关系
 - 合并并行任务的结果
 
+### 9. 安全测试配置（新增）
+- 配置 BurpBridge 自动同步参数
+- 传递目标主机和过滤条件给 Security Agent
+- 根据探索进展调整同步配置
+
 ## 可调度的子Agent
 
 ### Navigator Agent
@@ -70,6 +75,7 @@
 - **触发条件**: 并行运行，持续监控待测试项
 - **任务**: 执行越权测试和注入测试
 - **返回**: 发现的漏洞列表、测试建议
+- **配置传递**: Coordinator 传递自动同步配置（目标主机、过滤条件）
 
 ### Analyzer Agent
 - **触发条件**: Security Agent 完成重放测试
@@ -179,9 +185,64 @@
    - 为各窗口分配账号并登录
    - 处理可能的验证码
    ↓
-5. 启动并行任务
+5. 配置 Security Agent 自动同步
+   - 提取目标主机名（从 target_url）
+   - 配置默认过滤条件
+   - 启用自动同步
+   ↓
+6. 启动并行任务
    - 探索流水线
    - 安全测试监控
+```
+
+### Security Agent 自动同步配置
+
+Coordinator 负责配置 Security Agent 的自动同步参数：
+
+```json
+{
+  "auto_sync_config": {
+    "enabled": true,
+    "host": "<extracted_from_target_url>",
+    "methods": null,
+    "path_pattern": null,
+    "status_code": null,
+    "require_response": true
+  }
+}
+```
+
+**配置时机**：
+- 初始化阶段：从 `target_url` 提取主机名，配置自动同步
+- 目标切换时：禁用当前配置，应用新配置
+- 测试结束：禁用自动同步
+
+**默认配置说明**：
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `host` | 目标主机名 | 从 `target_url` 自动提取 |
+| `methods` | `null` | 接受所有 HTTP 方法 |
+| `path_pattern` | `null` | 无路径过滤 |
+| `status_code` | `null` | 无状态码过滤 |
+| `require_response` | `true` | 仅同步有响应的请求 |
+
+**配置示例**：
+
+```
+目标 URL: https://www.baidu.com/search
+提取主机: www.baidu.com
+
+配置 Security Agent 自动同步:
+POST /sync/auto
+{
+  "enabled": true,
+  "host": "www.baidu.com",
+  "methods": null,
+  "path_pattern": null,
+  "status_code": null,
+  "require_response": true
+}
 ```
 
 ### 主循环流程
@@ -429,11 +490,22 @@ Coordinator:
 ```
 Coordinator:
 探索阶段进行中，已访问 15 个页面
-同时启动 Security Agent 监控
+配置 Security Agent 自动同步（已完成）
+
+Coordinator (初始化时):
+配置 Security Agent 自动同步:
+POST /sync/auto
+{
+  "enabled": true,
+  "host": "www.example.com",
+  "methods": null,
+  "path_pattern": null,
+  "require_response": true
+}
 
 Security Agent (并行):
-同步历史记录... 发现 45 条请求
-发现敏感API: GET /api/users/{id}
+自动同步运行中... synced_count: 45
+查询历史记录... 发现敏感API: GET /api/users/{id}
 配置 user_001 角色并重放...
 
 Analyzer Agent:
@@ -456,7 +528,25 @@ Coordinator:
     "max_concurrent_tasks": 3,
     "pause_on_critical_event": true,
     "auto_relogin_on_expire": true,
-    "security_parallel": true
+    "security_parallel": true,
+    "auto_sync_defaults": {
+      "enabled": true,
+      "methods": null,
+      "path_pattern": null,
+      "status_code": null,
+      "require_response": true
+    }
   }
 }
 ```
+
+### 安全测试配置参数
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `security_parallel` | 是否并行运行安全测试 | `true` |
+| `auto_sync_defaults.enabled` | 默认启用自动同步 | `true` |
+| `auto_sync_defaults.methods` | HTTP 方法过滤 | `null`（全部） |
+| `auto_sync_defaults.path_pattern` | 路径过滤 | `null`（无过滤） |
+| `auto_sync_defaults.status_code` | 状态码过滤 | `null`（无过滤） |
+| `auto_sync_defaults.require_response` | 是否要求响应 | `true` |

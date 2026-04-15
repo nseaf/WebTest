@@ -1,31 +1,7 @@
 {
   "$schema": "vulnerabilities_schema",
   "description": "安全测试发现的漏洞记录",
-  "vulnerabilities": [
-    {
-      "id": "vuln_001",
-      "type": "IDOR",
-      "url": "https://api.example.com/users/123",
-      "method": "GET",
-      "parameter": null,
-      "description": "越权访问：Guest用户可访问Admin用户的个人数据",
-      "evidence": {
-        "original_role": "admin",
-        "original_status": 200,
-        "replay_role": "guest",
-        "replay_status": 200,
-        "body_similarity": 0.95,
-        "sensitive_data_exposed": ["username", "email", "phone"]
-      },
-      "severity": "high",
-      "cvss_score": null,
-      "cwe_id": "CWE-639",
-      "owasp_category": "A01:2021 - Broken Access Control",
-      "discovered_at": "2026-04-13T10:00:00Z",
-      "history_entry_id": null,
-      "replay_id": null
-    }
-  ],
+  "vulnerabilities": [],
   "statistics": {
     "total": 0,
     "by_severity": {
@@ -42,5 +18,30 @@
       "CSRF": 0,
       "OTHER": 0
     }
+  },
+  "vulnerability_schema": {
+    "id": "vuln_XXX",
+    "type": "IDOR|XSS|SQLI|COMMAND_INJECTION|CSRF|OTHER",
+    "url": "",
+    "method": "GET|POST|PUT|DELETE|PATCH",
+    "parameter": null,
+    "description": "",
+    "evidence": {
+      "original_role": null,
+      "original_status": null,
+      "replay_role": null,
+      "replay_status": null,
+      "body_similarity": null,
+      "sensitive_data_exposed": [],
+      "payload": null,
+      "response_indicator": null
+    },
+    "severity": "critical|high|medium|low",
+    "cvss_score": null,
+    "cwe_id": null,
+    "owasp_category": null,
+    "discovered_at": "ISO8601",
+    "history_entry_id": null,
+    "replay_id": null
   }
 }
