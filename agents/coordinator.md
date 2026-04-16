@@ -245,6 +245,94 @@ POST /sync/auto
 }
 ```
 
+### 自动同步验证流程
+
+在 Security Agent 配置自动同步后，Coordinator 负责验证同步是否正常工作：
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  初始化阶段                                                      │
+│  1. 配置自动同步                                                 │
+│     POST /sync/auto { enabled: true, host: target_host }        │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  2. 启动浏览器导航                                               │
+│     Playwright 导航到目标 URL                                    │
+│     产生代理流量                                                 │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  3. 等待同步生效                                                 │
+│     sleep(5000)  // 等待 5 秒                                    │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  4. 检查同步状态                                                 │
+│     GET /sync/auto/status                                        │
+│     获取 synced_count                                            │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+              ┌───────────────┴───────────────┐
+              ↓                               ↓
+    synced_count > 0                  synced_count = 0
+              │                               │
+              ↓                               ↓
+    ┌─────────────────────┐     ┌─────────────────────────────────┐
+    │ 同步正常            │     │ 创建 SYNC_WARNING 事件           │
+    │ 继续测试流程         │     │ 通知用户检查配置                 │
+    └─────────────────────┘     └─────────────────────────────────┘
+```
+
+#### SYNC_WARNING 事件结构
+
+```json
+{
+  "event_id": "evt_sync_warning_001",
+  "event_type": "SYNC_WARNING",
+  "source_agent": "Coordinator Agent",
+  "priority": "high",
+  "status": "pending",
+  "payload": {
+    "message": "自动同步已启用但 synced_count 为 0",
+    "possible_causes": [
+      "Playwright 未配置代理（检查 --proxy-server 参数）",
+      "Burp Suite Intercept 模式开启",
+      "BurpBridge 插件同步功能异常"
+    ],
+    "suggested_actions": [
+      "检查 .mcp.json 中 Playwright 的 --proxy-server 配置",
+      "确认 Burp Suite Proxy -> Intercept 已关闭",
+      "检查 Burp Suite HTTP History 是否有记录"
+    ]
+  },
+  "created_at": "2026-04-16T10:00:00Z"
+}
+```
+
+#### 用户通知格式
+
+当检测到同步问题时，输出以下提示：
+
+```
+⚠️ 警告: BurpBridge 同步验证失败
+
+自动同步已启用，但 synced_count 为 0。可能原因：
+1. Playwright 浏览器未通过 Burp 代理
+2. Burp Suite Intercept 模式未关闭
+3. BurpBridge 插件同步功能异常
+
+建议操作：
+1. 检查 .mcp.json 中 Playwright 配置是否包含 --proxy-server 参数
+2. 在 Burp Suite 中确认 Proxy -> Intercept 显示 "Intercept is off"
+3. 查看 Burp Suite HTTP History 是否有请求记录
+
+是否继续测试？(输入 'continue' 继续，或 'stop' 暂停)
+```
+
 ### 主循环流程
 
 ```

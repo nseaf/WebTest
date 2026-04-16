@@ -74,19 +74,38 @@ Playwright MCP响应可能超过50k tokens，务必优化：
 
 ### 代理配置
 
-Playwright 浏览器配置使用 Burp Suite 代理（127.0.0.1:8080），确保所有 HTTP 流量被 Burp 捕获：
+**重要**: Playwright MCP 必须通过 `--proxy-server` 命令行参数配置代理，环境变量方式对浏览器进程无效。
+
+#### 正确配置（.mcp.json）
 
 ```json
-// .mcp.json 中的代理配置
-"env": {
-  "HTTP_PROXY": "http://127.0.0.1:8080",
-  "HTTPS_PROXY": "http://127.0.0.1:8080"
+"playwright": {
+  "command": "npx",
+  "args": [
+    "@playwright/mcp@latest",
+    "--proxy-server", "http://127.0.0.1:8080"
+  ]
 }
 ```
 
-**注意**:
-- 需要在 Burp Suite 中安装 CA 证书到系统信任列表，否则 HTTPS 请求会失败
+#### 错误配置（环境变量不生效）
+
+```json
+// ❌ 这种配置对浏览器无效！
+"playwright": {
+  "command": "npx",
+  "args": ["@playwright/mcp@latest"],
+  "env": {
+    "HTTP_PROXY": "http://127.0.0.1:8080",
+    "HTTPS_PROXY": "http://127.0.0.1:8080"
+  }
+}
+```
+
+**前置条件**:
+- 在 Burp Suite 中安装 CA 证书到系统信任列表，否则 HTTPS 请求会失败
 - 建议关闭 Burp 的 "Intercept" 模式，避免请求被拦截
+- 修改 `.mcp.json` 后需要重启 MCP 服务才能生效
 
 ## BurpBridge MCP 使用
 
@@ -123,6 +142,31 @@ BurpBridge 是一个 Burp Suite 插件，通过 MCP 暴露 Burp 的能力给 AI 
 | `mcp__burpbridge__delete_authentication_context` | 删除角色配置 |
 | `mcp__burpbridge__replay_http_request_as_role` | 重放请求 |
 | `mcp__burpbridge__get_replay_scan_result` | 获取重放结果 |
+
+### BurpBridge MCP 调用格式
+
+**重要**: 所有 BurpBridge MCP 工具需要 `input` 参数包装，即使是无参数的工具也需要传入空对象 `{}`。
+
+#### 正确调用方式
+
+```
+// 无参数工具
+mcp__burpbridge__check_burp_health(input: {})
+mcp__burpbridge__list_configured_roles(input: {})
+mcp__burpbridge__get_auto_sync_status(input: {})
+
+// 带参数工具
+mcp__burpbridge__list_paginated_http_history(input: {"host": "example.com", "page": 1})
+mcp__burpbridge__configure_auto_sync(input: {"enabled": true, "host": "www.example.com"})
+mcp__burpbridge__replay_http_request_as_role(input: {"history_entry_id": "xxx", "target_role": "admin"})
+```
+
+#### 错误调用方式
+
+```
+mcp__burpbridge__check_burp_health()  // ❌ 缺少 input 参数
+mcp__burpbridge__list_paginated_http_history({"host": "example.com"})  // ❌ 缺少 input 包装
+```
 
 ### 使用场景
 
@@ -204,3 +248,52 @@ reports/              # 报告模板（提交git）
 ## 安全声明
 
 本系统仅用于授权的安全测试和研究目的。测试任何目标前请确保获得适当授权。
+
+## 故障排查
+
+### Burp 同步记录为空
+
+当 `mcp__burpbridge__list_paginated_http_history` 返回空列表时：
+
+**检查项**：
+1. **Burp Suite Intercept 模式**: 确保 Proxy -> Intercept 是关闭状态（"Intercept is off"）
+2. **Playwright 代理配置**: 检查 `.mcp.json` 是否使用了 `--proxy-server` 参数
+3. **BurpBridge REST API**: 运行 `curl http://localhost:8090/health` 确认服务正常
+4. **MongoDB 服务**: 运行 `docker ps | grep mongo` 确认 MongoDB 正在运行
+5. **Burp Suite Proxy History**: 在 Burp Suite 界面中查看 HTTP History 是否有记录
+
+**常见原因**：
+- Playwright 浏览器未通过代理（环境变量配置无效）
+- MCP 服务未重启（修改配置后需要重启）
+- BurpBridge 插件同步功能存在 Bug
+
+### MCP 连接失败
+
+**检查项**：
+1. 运行 `/mcp` 查看 MCP 服务状态
+2. 检查 `.mcp.json` 配置格式是否正确（使用 JSON 验证器）
+3. 重启 Claude Code 会话重新加载 MCP 配置
+
+### Playwright 浏览器无法启动
+
+**检查项**：
+1. 运行 `npx playwright install` 安装浏览器
+2. 检查是否有防火墙阻止
+3. 查看错误日志确定具体原因
+
+### MongoDB 连接失败
+
+**检查项**：
+1. 运行 `docker ps` 确认容器运行中
+2. 运行 `docker logs mongodb` 查看日志
+3. 检查端口 27017 是否被占用
+
+## 验证清单
+
+在开始测试前，请确认以下条件：
+
+- [ ] MongoDB 容器运行中 (`docker ps | grep mongo`)
+- [ ] Burp Suite 已启动，代理监听 127.0.0.1:8080
+- [ ] BurpBridge 插件已加载，REST API 正常 (`curl http://localhost:8090/health`)
+- [ ] Playwright MCP 配置了 `--proxy-server` 参数
+- [ ] MCP 服务已重启加载最新配置

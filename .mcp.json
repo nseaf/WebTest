@@ -2,15 +2,19 @@
   "mcpServers": {
     "playwright": {
       "command": "npx",
-      "args": ["@playwright/mcp@latest"],
+      "args": [
+        "@playwright/mcp@latest",
+        "--proxy-server", "http://127.0.0.1:8080"
+      ],
       "env": {
         "HTTP_PROXY": "http://127.0.0.1:8080",
         "HTTPS_PROXY": "http://127.0.0.1:8080"
       }
     },
     "burpbridge": {
+      "type": "stdio",
       "command": "uv",
-      "args": ["run", "python", "./burp_mcp_server.py"],
+      "args": ["run", "--directory", "C:\\Users\\wang_\\project\\WebTest", "python", "burp_mcp_server.py"],
       "env": {
         "BURP_BRIDGE_URL": "http://localhost:8090",
         "MONGO_URI": "mongodb://localhost:27017/"
