@@ -12,7 +12,7 @@ BURP_BRIDGE_URL = os.getenv("BURP_BRIDGE_URL", "http://localhost:8090")
 # --- 配置 MongoDB 连接（用于直接查询重放结果）---
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 DATABASE_NAME = os.getenv("MONGO_DB_NAME", "burpbridge")
-REPLAY_COLLECTION_NAME = "replay"
+REPLAY_COLLECTION_NAME = "replays"
 
 app = FastMCP("BurpBridge-MCP")
 

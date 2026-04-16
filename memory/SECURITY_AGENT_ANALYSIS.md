@@ -204,7 +204,7 @@ public class ReplayRecord {
 | `list_configured_roles` | `GET /auth/roles` | 不变 |
 | `delete_authentication_context` | `DELETE /auth/roles/:role` | 不变 |
 | `replay_http_request_as_role` | `POST /scan/single` | 支持修改 |
-| `get_replay_scan_result` | MongoDB 查询 | replay_records 集合 |
+| `get_replay_scan_result` | MongoDB 查询 | replays 集合 |
 
 ### 3. 新增自动同步能力
 

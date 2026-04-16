@@ -39,7 +39,7 @@
 ```
 mcp__plugin_mongodb_mongodb__find(input: {
   "database": "burpbridge",
-  "collection": "replay_records",
+  "collection": "replays",
   "filter": {"replayId": "uuid-xxx"}
 })
 ```
@@ -273,7 +273,7 @@ mcp__plugin_mongodb_mongodb__find(input: {
 2. 使用 MongoDB MCP 查询重放详情
    mcp__plugin_mongodb_mongodb__find({
      database: "burpbridge",
-     collection: "replay_records",
+     collection: "replays",
      filter: {replayId: "xxx"}
    })
    ↓
@@ -419,7 +419,7 @@ mcp__plugin_mongodb_mongodb__find(input: {
 - 重放请求的 `replay_id`（仅传递 ID，不传递具体内容）
 
 ### 数据获取方式
-- 使用 **MongoDB MCP** 自行查询 `burpbridge.replay_records` 集合
+- 使用 **MongoDB MCP** 自行查询 `burpbridge.replays` 集合
 - 重放结果中已包含原始请求和响应，无需额外查询
 
 ### 向 Coordinator Agent 报告

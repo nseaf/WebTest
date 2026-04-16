@@ -379,11 +379,11 @@ Content-Type: application/json
 
 ## 重放结果查询
 
-重放结果存储在 MongoDB 的 `replay_records` 集合中：
+重放结果存储在 MongoDB 的 `replays` 集合中：
 
 ```javascript
 // 查询重放结果
-db.replay_records.findOne({ replayId: "uuid-xxx" })
+db.replays.findOne({ replayId: "uuid-xxx" })
 
 // 结果结构
 {
