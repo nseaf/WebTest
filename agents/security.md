@@ -501,9 +501,12 @@ db.replay_records.findOne({ replayId: "uuid-xxx" })
 4. 执行重放测试
    POST /scan/single (低权限角色)
    ↓
-5. 调用 Analyzer Agent 分析结果
+5. 传递 replay_id 给 Analyzer Agent
+   （仅传递 ID，Analyzer 自行查询 MongoDB 获取详情）
    ↓
-6. 记录漏洞，生成探索建议
+6. 接收分析结果
+   ↓
+7. 记录漏洞，生成探索建议
 ```
 
 ### 流程 3：参数变异测试
@@ -600,7 +603,8 @@ db.replay_records.findOne({ replayId: "uuid-xxx" })
 - 会话状态更新通知
 
 ### 调用 Analyzer Agent
-- 传递 replay_id 和历史记录 ID
+- **仅传递 `replay_id`**（不传递具体重放内容）
+- Analyzer Agent 将自行使用 MongoDB MCP 查询重放结果
 - 接收漏洞判定和建议
 
 ### 向 Coordinator Agent 报告

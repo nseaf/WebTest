@@ -172,28 +172,124 @@
    - config/accounts.json: 账号和登录配置
    - 会话参数: max_depth, max_pages, timeout
    ↓
-2. 初始化状态文件
+2. 清理 MongoDB 历史数据
+   - 删除 burpbridge.history 集合
+   - 删除 burpbridge.replay_records 集合
+   - 确保新测试会话不受旧数据影响
+   ↓
+3. 初始化状态文件
    - result/events.json: 清空或重置
    - result/windows.json: 初始化窗口
    - result/sessions.json: 初始化会话
    ↓
-3. 创建浏览器窗口
+4. 创建浏览器窗口
    - 主窗口: primary_exploration
    - 测试窗口: idor_testing (可选)
    ↓
-4. 执行初始登录
+5. 执行初始登录
    - 为各窗口分配账号并登录
    - 处理可能的验证码
    ↓
-5. 配置 Security Agent 自动同步
+6. 配置 Security Agent 自动同步
    - 提取目标主机名（从 target_url）
    - 配置默认过滤条件
    - 启用自动同步
    ↓
-6. 启动并行任务
+7. 启动并行任务
    - 探索流水线
    - 安全测试监控
 ```
+
+### MongoDB 数据清理
+
+Coordinator Agent 在初始化时负责清理上一次测试的历史数据，确保分析结果不受冗余数据影响。
+
+#### 清理目标
+
+| 数据库 | 集合 | 说明 |
+|--------|------|------|
+| `burpbridge` | `history` | 历史请求记录 |
+| `burpbridge` | `replay_records` | 重放测试结果 |
+
+#### 清理流程
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  启动时清理 MongoDB                                               │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  1. 检查 MongoDB 连接                                            │
+│     mcp__plugin_mongodb_mongodb__list-databases                 │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  2. 删除 history 集合                                            │
+│     mcp__plugin_mongodb_mongodb__drop-collection                │
+│     database: "burpbridge", collection: "history"               │
+│     （如果集合不存在则跳过）                                       │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  3. 删除 replay_records 集合                                     │
+│     mcp__plugin_mongodb_mongodb__drop-collection                │
+│     database: "burpbridge", collection: "replay_records"        │
+│     （如果集合不存在则跳过）                                       │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  4. 记录清理结果                                                 │
+│     - 清理的集合数量                                              │
+│     - 清理时间戳                                                  │
+│     - 写入会话状态                                                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### MongoDB MCP 工具使用
+
+清理数据使用以下 MongoDB MCP 工具：
+
+```
+// 列出集合，检查是否存在
+mcp__plugin_mongodb_mongodb__list-collections(input: {"database": "burpbridge"})
+
+// 删除集合
+mcp__plugin_mongodb_mongodb__drop-collection(input: {
+  "database": "burpbridge",
+  "collection": "history"
+})
+
+mcp__plugin_mongodb_mongodb__drop-collection(input: {
+  "database": "burpbridge",
+  "collection": "replay_records"
+})
+```
+
+#### 清理结果记录
+
+清理完成后，在会话状态中记录：
+
+```json
+{
+  "session_id": "session_20260416",
+  "mongodb_cleanup": {
+    "performed_at": "2026-04-16T10:00:00Z",
+    "collections_dropped": ["history", "replay_records"],
+    "status": "success"
+  }
+}
+```
+
+#### 注意事项
+
+1. **仅在启动时清理**: 避免在测试过程中清理数据
+2. **确认后再清理**: 可以让用户确认是否清理旧数据
+3. **错误处理**: 如果 MongoDB 连接失败，记录警告但继续测试
+4. **日志记录**: 清理操作应记录到事件队列
 
 ### Security Agent 自动同步配置
 

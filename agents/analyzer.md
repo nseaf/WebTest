@@ -30,9 +30,21 @@
 
 ## 数据输入
 
-### 1. 重放记录（MongoDB）
+### 重放记录查询（使用 MongoDB MCP）
 
-从 `replay_records` 集合获取：
+从 Security Agent 接收 `replay_id` 后，使用 MongoDB MCP 查询重放结果。
+
+**MongoDB MCP 工具调用**：
+
+```
+mcp__plugin_mongodb_mongodb__find(input: {
+  "database": "burpbridge",
+  "collection": "replay_records",
+  "filter": {"replayId": "uuid-xxx"}
+})
+```
+
+**返回数据结构**：
 
 ```javascript
 {
@@ -54,21 +66,7 @@
 }
 ```
 
-### 2. 原始请求详情（MongoDB）
-
-从 `history_entries` 集合获取：
-
-```javascript
-{
-  "_id": ObjectId("65f1a2b3..."),
-  "url": "https://api.example.com/api/users/123",
-  "method": "GET",
-  "timestampMs": 1710000000000,
-  "requestRaw": "GET /api/users/123 HTTP/1.1\r\nHost: api.example.com\r\n...",
-  "responseStatusCode": 200,
-  "responseSummary": "HTTP/1.1 200 OK\r\n..."
-}
-```
+**注意**: 重放结果已包含原始请求和响应，无需单独查询 `history` 集合。
 
 ---
 
@@ -269,11 +267,15 @@
 ### 流程 1：越权分析
 
 ```
-1. 接收重放结果
+1. 接收 replay_id
    从 Security Agent 获取 replay_id
    ↓
-2. 查询 MongoDB 获取重放详情
-   db.replay_records.findOne({ replayId: "xxx" })
+2. 使用 MongoDB MCP 查询重放详情
+   mcp__plugin_mongodb_mongodb__find({
+     database: "burpbridge",
+     collection: "replay_records",
+     filter: {replayId: "xxx"}
+   })
    ↓
 3. 状态码对比
    original_status == replayed_status ?
@@ -414,8 +416,11 @@
 ## 与其他Agent的协作
 
 ### 从 Security Agent 接收
-- 重放请求的 replay_id
-- 需要分析的 HTTP 请求/响应对
+- 重放请求的 `replay_id`（仅传递 ID，不传递具体内容）
+
+### 数据获取方式
+- 使用 **MongoDB MCP** 自行查询 `burpbridge.replay_records` 集合
+- 重放结果中已包含原始请求和响应，无需额外查询
 
 ### 向 Coordinator Agent 报告
 - 发现的漏洞（VULNERABILITY_FOUND 事件）
