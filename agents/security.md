@@ -9,6 +9,33 @@
 - MongoDB 服务运行中（存储历史记录和重放结果）
 - Playwright 浏览器配置使用 Burp 代理（127.0.0.1:8080）
 
+## 重要：MCP 工具调用格式
+
+**所有 BurpBridge MCP 工具调用必须使用 `input` 参数包装，即使是无参数的工具也需要传入空对象 `{}`。**
+
+### 正确调用方式
+
+```
+// 无参数工具
+mcp__burpbridge__check_burp_health(input: {})
+mcp__burpbridge__list_configured_roles(input: {})
+mcp__burpbridge__get_auto_sync_status(input: {})
+
+// 带参数工具
+mcp__burpbridge__list_paginated_http_history(input: {"host": "example.com", "page": 1})
+mcp__burpbridge__configure_auto_sync(input: {"enabled": true, "host": "www.example.com"})
+mcp__burpbridge__replay_http_request_as_role(input: {"history_entry_id": "xxx", "target_role": "admin"})
+mcp__burpbridge__sync_proxy_history_with_filters(input: {"host": "www.example.com", "require_response": true})
+```
+
+### 错误调用方式
+
+```
+mcp__burpbridge__check_burp_health()  // ❌ 缺少 input 参数
+mcp__burpbridge__list_paginated_http_history({"host": "example.com"})  // ❌ 缺少 input 包装
+mcp__burpbridge__get_auto_sync_status(input)  // ❌ input 必须是对象格式
+```
+
 ## 核心职责
 
 ### 1. 自动同步管理（优先使用）

@@ -153,10 +153,70 @@
 7. 验证登录结果
    检查 success_indicator / failure_indicator
    ↓
-8. 更新会话状态
-   写入 result/sessions.json
+8. 获取浏览器 Cookie
+   使用 Playwright 获取当前会话 Cookie
    ↓
-9. 返回登录报告
+9. 更新会话状态
+   写入 result/sessions.json
+   - 更新 auth_context.cookies
+   - 更新 status, last_activity, expires_at
+   ↓
+10. 同步到 BurpBridge
+   调用 mcp__burpbridge__configure_authentication_context
+   ↓
+11. 返回登录报告
+```
+
+### 登录成功后的 Cookie 同步
+
+登录成功后，Form Agent 负责将浏览器 Cookie 同步到 BurpBridge：
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  1. 获取浏览器 Cookie                                             │
+│     使用 Playwright browser_run_code 或 browser_evaluate         │
+│     获取当前页面的所有 Cookie                                     │
+└─────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  2. 更新 result/sessions.json                                    │
+│     更新对应账号的 auth_context.cookies                          │
+└─────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  3. 同步到 BurpBridge                                            │
+│     调用 mcp__burpbridge__configure_authentication_context       │
+│     或 mcp__burpbridge__import_playwright_cookies                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Cookie 同步代码示例
+
+```javascript
+// 方法1: 使用 Playwright 获取 Cookie 并配置到 BurpBridge
+const cookies = await page.context().cookies();
+
+// 转换为 BurpBridge 格式
+const cookieDict = {};
+for (const cookie of cookies) {
+  cookieDict[cookie.name] = cookie.value;
+}
+
+// 同步到 BurpBridge
+mcp__burpbridge__configure_authentication_context(input: {
+  "role": "admin",
+  "cookies": cookieDict,
+  "headers": {}
+})
+
+// 方法2: 使用 import_playwright_cookies (推荐)
+mcp__burpbridge__import_playwright_cookies(input: {
+  "role": "admin",
+  "cookies": cookies,  // 直接传递 Playwright 格式
+  "merge_with_existing": true
+})
 ```
 
 ### 验证码处理流程
@@ -474,12 +534,33 @@ function handleSessionExpired(account_id) {
 
 ## 数据存储路径
 
-| 数据类型 | 路径 |
-|---------|------|
-| 账号配置 | `config/accounts.json` |
-| 会话状态 | `result/sessions.json` |
-| 事件队列 | `result/events.json` |
-| 窗口注册 | `result/windows.json` |
+| 数据类型 | 路径 | 说明 |
+|---------|------|------|
+| 账号配置 | `config/accounts.json` | 静态配置：账号、密码、角色、权限 |
+| 会话状态 | `result/sessions.json` | 动态数据：Cookie、Token、登录状态 |
+| 事件队列 | `result/events.json` | Agent 间通信事件 |
+| 窗口注册 | `result/windows.json` | 多窗口管理 |
+
+### sessions.json 结构
+
+```json
+{
+  "sessions": [
+    {
+      "account_id": "admin_001",
+      "role": "admin",
+      "status": "active",
+      "window_id": "window_0",
+      "auth_context": {
+        "cookies": { "session": "abc123" },
+        "headers": { "Authorization": "Bearer xxx" }
+      },
+      "last_activity": "2026-04-17T10:00:00Z",
+      "expires_at": "2026-04-17T11:00:00Z"
+    }
+  ]
+}
+```
 
 ## 注意事项
 

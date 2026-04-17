@@ -1,72 +1,52 @@
 {
   "$schema": "accounts_schema",
-  "description": "测试账号配置文件，定义不同角色的登录凭据和配置",
+  "description": "测试账号配置文件 - 主数据源（静态配置）",
+  "note": "此文件存储账号基础信息，用于 Agent 登录决策和角色识别。动态认证信息（Cookie/Token）存储在 result/sessions.json",
   "accounts": [
     {
       "id": "admin_001",
       "role": "admin",
-      "priority": 1,
+      "description": "管理员账号，具有完整权限",
       "credentials": {
         "username": "admin@example.com",
         "password": "encrypted:base64_encoded_placeholder"
       },
-      "login_config": {
-        "login_url": "https://example.com/login",
-        "username_selector": "#username",
-        "password_selector": "#password",
-        "submit_selector": "#login-btn",
-        "success_indicator": ".user-profile",
-        "failure_indicator": ".error-message"
-      },
-      "session_config": {
-        "session_timeout_seconds": 1800,
-        "keep_alive_interval_seconds": 300
-      },
-      "capabilities": ["read", "write", "delete", "admin_panel"],
-      "description": "管理员账号，具有完整权限"
+      "capabilities": ["read", "write", "delete", "admin_panel"]
     },
     {
       "id": "user_001",
       "role": "user",
-      "priority": 2,
+      "description": "普通用户账号，具有基本读写权限",
       "credentials": {
         "username": "user@example.com",
         "password": "encrypted:base64_encoded_placeholder"
       },
-      "login_config": {
-        "login_url": "https://example.com/login",
-        "username_selector": "#username",
-        "password_selector": "#password",
-        "submit_selector": "#login-btn",
-        "success_indicator": ".user-profile",
-        "failure_indicator": ".error-message"
-      },
-      "session_config": {
-        "session_timeout_seconds": 1800,
-        "keep_alive_interval_seconds": 300
-      },
-      "capabilities": ["read", "write"],
-      "description": "普通用户账号，具有基本读写权限"
+      "capabilities": ["read", "write"]
     },
     {
       "id": "guest_001",
       "role": "guest",
-      "priority": 3,
+      "description": "访客账号，无登录凭据，用于测试未授权访问",
       "credentials": {
         "username": null,
         "password": null
       },
-      "login_config": {
-        "login_url": null,
-        "success_indicator": null
-      },
-      "session_config": {
-        "session_timeout_seconds": 3600
-      },
-      "capabilities": ["read"],
-      "description": "访客账号，无登录凭据，用于测试未授权访问"
+      "capabilities": ["read"]
     }
   ],
+  "login_config": {
+    "default_login_url": "https://example.com/login",
+    "username_selector": "#username",
+    "password_selector": "#password",
+    "submit_selector": "#login-btn",
+    "success_indicator": ".user-profile",
+    "failure_indicator": ".error-message"
+  },
+  "session_config": {
+    "timeout_seconds": 1800,
+    "keep_alive_interval_seconds": 300,
+    "max_relogin_attempts": 3
+  },
   "captcha_config": {
     "enabled": true,
     "detection_selectors": [
@@ -75,22 +55,23 @@
       "#captcha",
       "[class*='captcha']",
       "img[alt*='captcha']",
-      "img[alt*='验证码']"
+      "img[alt*='验证码']",
+      "#geetest",
+      ".geetest",
+      "[data-captcha]",
+      "div.g-recaptcha",
+      "div.h-captcha"
     ],
     "timeout_seconds": 60,
     "notification_message": "检测到验证码，请手动完成验证后回复 'done' 继续"
   },
-  "session_management": {
-    "check_interval_seconds": 60,
-    "relogin_on_expire": true,
-    "max_relogin_attempts": 3,
-    "session_indicators": {
-      "logged_in": [".user-profile", ".logout-btn", "[data-user-id]"],
-      "logged_out": [".login-btn", ".signin-link", "#login-form"]
-    }
+  "session_indicators": {
+    "logged_in": [".user-profile", ".logout-btn", "[data-user-id]", ".user-avatar", ".account-menu"],
+    "logged_out": [".login-btn", ".signin-link", "#login-form", ".register-link"]
   },
   "notes": {
     "password_storage": "当前使用明文存储密码（base64编码占位符）。生产环境应使用环境变量或加密存储。",
+    "auth_context_sync": "登录成功后，Cookie/Token 会自动同步到 result/sessions.json 和 BurpBridge",
     "role_testing": "配置至少两种角色以支持越权测试（IDOR）"
   }
 }

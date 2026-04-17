@@ -1,22 +1,67 @@
 {
   "$schema": "sessions_schema",
-  "description": "账号会话状态管理",
-  "sessions": [],
+  "description": "账号会话状态管理 - 动态认证数据",
+  "note": "此文件存储动态认证信息（Cookie/Token），由 Agent 在登录后自动更新，并同步到 BurpBridge",
+  "sessions": [
+    {
+      "account_id": "admin_001",
+      "role": "admin",
+      "status": "logged_out",
+      "window_id": null,
+      "auth_context": {
+        "cookies": {},
+        "headers": {}
+      },
+      "last_activity": null,
+      "expires_at": null,
+      "login_attempts": 0
+    },
+    {
+      "account_id": "user_001",
+      "role": "user",
+      "status": "logged_out",
+      "window_id": null,
+      "auth_context": {
+        "cookies": {},
+        "headers": {}
+      },
+      "last_activity": null,
+      "expires_at": null,
+      "login_attempts": 0
+    },
+    {
+      "account_id": "guest_001",
+      "role": "guest",
+      "status": "active",
+      "window_id": null,
+      "auth_context": {
+        "cookies": {},
+        "headers": {}
+      },
+      "last_activity": null,
+      "expires_at": null,
+      "login_attempts": 0
+    }
+  ],
+  "_sync_info": {
+    "last_sync_to_burpbridge": null,
+    "sync_status": "not_synced"
+  },
   "session_schema": {
-    "account_id": "admin_001|user_001|guest_001",
-    "role": "admin|user|guest",
-    "window_id": null,
-    "status": "active|expired|failed|pending",
-    "logged_in_at": null,
-    "last_activity_time": null,
-    "cookies": [],
-    "relogin_attempts": 0,
-    "max_relogin_attempts": 3
+    "account_id": "账号ID，对应 config/accounts.json 中的账号",
+    "role": "用户角色: admin|user|guest",
+    "status": "logged_out|active|expired|failed",
+    "window_id": "关联的浏览器窗口ID",
+    "auth_context.cookies": "从浏览器获取的 Cookie 字典",
+    "auth_context.headers": "认证相关的 HTTP 头部",
+    "last_activity": "最后活动时间 (ISO 8601)",
+    "expires_at": "会话过期时间 (ISO 8601)",
+    "login_attempts": "登录尝试次数"
   },
   "status_definitions": {
+    "logged_out": "未登录状态",
     "active": "会话有效，可正常使用",
     "expired": "会话已过期，需要重新登录",
-    "failed": "登录失败",
-    "pending": "等待登录"
+    "failed": "登录失败"
   }
 }

@@ -237,10 +237,114 @@ async function prepareIdorWindows() {
    ↓
 8. 检测登录状态变化
    ↓
-9. 更新状态
+9. 检查 Cookie 变化 ⭐ 新增
+   - 获取当前浏览器 Cookie
+   - 对比 sessions.json 中的 Cookie
+   - 如有变化，更新并同步到 BurpBridge
    ↓
-10. 返回导航报告
+10. 更新状态
+   ↓
+11. 返回导航报告
 ```
+
+### Cookie 变化检测与同步
+
+Navigator Agent 负责在每次导航后检测 Cookie 变化，并同步到 sessions.json 和 BurpBridge。
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  每次导航后执行 Cookie 同步                                        │
+└─────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  1. 获取当前浏览器 Cookie                                          │
+│     使用 Playwright: page.context().cookies()                    │
+└─────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  2. 对比 result/sessions.json 中存储的 Cookie                     │
+│     - 检查新增 Cookie                                             │
+│     - 检查值变化的 Cookie                                          │
+│     - 检查删除的 Cookie                                            │
+└─────────────────────────────────────────────────────────────────┘
+                               │
+                    ┌──────────┴──────────┐
+                    │                     │
+              Cookie 无变化          Cookie 有变化
+                    │                     │
+                    ▼                     ▼
+            ┌─────────────┐    ┌─────────────────────────────────┐
+            │ 继续后续流程  │    │ 3. 更新 sessions.json           │
+            └─────────────┘    │    - 更新 auth_context.cookies   │
+                               └─────────────────────────────────┘
+                                              │
+                                              ▼
+                               ┌─────────────────────────────────┐
+                               │ 4. 同步到 BurpBridge             │
+                               │    import_playwright_cookies    │
+                               └─────────────────────────────────┘
+```
+
+### Cookie 同步代码示例
+
+```javascript
+// 在每次导航后调用
+async function syncCookies(role, page) {
+  // 1. 获取当前浏览器 Cookie
+  const currentCookies = await page.context().cookies();
+  
+  // 2. 转换为字典格式
+  const cookieDict = {};
+  for (const cookie of currentCookies) {
+    cookieDict[cookie.name] = cookie.value;
+  }
+  
+  // 3. 更新 result/sessions.json
+  // (通过文件读写或事件通知 Coordinator)
+  
+  // 4. 同步到 BurpBridge
+  await mcp__burpbridge__import_playwright_cookies({
+    "role": role,
+    "cookies": currentCookies,
+    "merge_with_existing": true
+  });
+  
+  return cookieDict;
+}
+```
+
+### Set-Cookie 响应处理场景
+
+当服务器响应包含 `Set-Cookie` 时：
+
+```
+服务器响应: Set-Cookie: session=new_value; Path=/
+
+     ↓ Playwright 自动处理
+
+浏览器 Cookie 更新
+
+     ↓ Navigator Agent 检测
+
+下一次导航时同步 Cookie 到 sessions.json 和 BurpBridge
+
+     ↓ 后续重放请求
+
+使用最新的 Cookie
+```
+
+### 重要 Cookie 变化事件
+
+检测到以下 Cookie 变化时应特别处理：
+
+| 变化类型 | 处理方式 |
+|---------|---------|
+| Session Cookie 更新 | 立即同步到 BurpBridge |
+| 新增认证 Token | 立即同步，更新 headers |
+| 关键 Cookie 被删除 | 可能会话过期，触发检查 |
+| Cookie 即将过期 | 提前预警，准备重新登录 |
 
 ## 导航类型
 
