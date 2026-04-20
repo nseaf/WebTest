@@ -941,6 +941,392 @@ def is_permission_matrix_sheet(sheet):
     return False
 ```
 
+---
+
+## 合并单元格处理
+
+### 问题说明
+
+`pandas.read_excel()` 不会保留合并单元格信息，导致：
+- 合并单元格只有左上角显示值
+- 其他位置变成 `NaN`
+- 数据出现重复或缺失
+
+**示例**：
+
+```
+原始 Excel 表格（合并单元格）:
+| 模块     | 功能     | 权限 |
+|----------|----------|------|
+| 用户管理 | 创建用户 | 是   |
+| (合并)   | 删除用户 | 是   |
+| (合并)   | 修改用户 | 是   |
+
+pandas 读取后:
+| 模块     | 功能     | 权限 |
+|----------|----------|------|
+| 用户管理 | 创建用户 | 是   |
+| NaN      | 删除用户 | 是   |
+| NaN      | 修改用户 | 是   |
+```
+
+### 解决方案
+
+使用 `openpyxl` 的 `merged_cells.ranges` 获取合并单元格范围，手动填充值。
+
+### 核心处理函数
+
+```python
+from openpyxl import load_workbook
+import pandas as pd
+
+def read_excel_with_merged_cells(file_path, sheet_name=None, header_row=0):
+    """
+    读取 Excel 文件，正确处理合并单元格
+    
+    参数:
+        file_path: Excel 文件路径
+        sheet_name: 工作表名称（可选，默认第一个工作表）
+        header_row: 表头行号（0-indexed，默认第一行）
+    
+    返回:
+        pandas DataFrame，合并单元格已填充
+    """
+    # 加载工作簿
+    wb = load_workbook(file_path, data_only=True)
+    ws = wb[sheet_name] if sheet_name else wb.active
+    
+    # 读取所有数据
+    data = []
+    for row in ws.iter_rows(values_only=True):
+        data.append(list(row))
+    
+    # 创建 DataFrame
+    df = pd.DataFrame(data)
+    
+    # 处理合并单元格
+    for merged_range in ws.merged_cells.ranges:
+        min_col, min_row, max_col, max_row = merged_range.bounds
+        
+        # 转换为 0-indexed
+        r_start = min_row - 1
+        r_end = max_row      # pandas 切片是左闭右开，不需要 +1
+        c_start = min_col - 1
+        c_end = max_col
+        
+        # 获取左上角值
+        value = df.iloc[r_start, c_start]
+        
+        # 填充整个合并区域
+        if value is not None:  # 只有当左上角有值时才填充
+            for r in range(r_start, r_end):
+                for c in range(c_start, c_end):
+                    df.iloc[r, c] = value
+    
+    wb.close()
+    
+    # 设置表头（如果有）
+    if header_row is not None:
+        df.columns = df.iloc[header_row]
+        df = df.iloc[header_row + 1:].reset_index(drop=True)
+    
+    return df
+```
+
+### 合并单元格处理器类
+
+```python
+class ExcelMergedCellHandler:
+    """
+    Excel 合并单元格处理器
+    
+    用于检测、分析和填充合并单元格
+    """
+    
+    def __init__(self, file_path):
+        self.file_path = file_path
+        self.wb = load_workbook(file_path, data_only=True)
+    
+    def get_merged_ranges(self, sheet_name=None):
+        """
+        获取所有合并单元格范围
+        
+        返回:
+            列表，每个元素是 (min_col, min_row, max_col, max_row) 元组
+        """
+        ws = self.wb[sheet_name] if sheet_name else self.wb.active
+        ranges = []
+        
+        for merged_range in ws.merged_cells.ranges:
+            ranges.append(merged_range.bounds)  # (min_col, min_row, max_col, max_row)
+        
+        return ranges
+    
+    def get_merged_ranges_info(self, sheet_name=None):
+        """
+        获取合并单元格的详细信息
+        
+        返回:
+            列表，每个元素包含范围、值、方向等信息
+        """
+        ws = self.wb[sheet_name] if sheet_name else self.wb.active
+        infos = []
+        
+        for merged_range in ws.merged_cells.ranges:
+            min_col, min_row, max_col, max_row = merged_range.bounds
+            
+            # 判断合并方向
+            is_vertical = (min_col == max_col)  # 垂直合并（同一列多行）
+            is_horizontal = (min_row == max_row)  # 水平合并（同一行多列）
+            
+            # 获取左上角值
+            value = ws.cell(row=min_row, column=min_col).value
+            
+            infos.append({
+                'range': str(merged_range),
+                'bounds': (min_col, min_row, max_col, max_row),
+                'value': value,
+                'is_vertical': is_vertical,
+                'is_horizontal': is_horizontal,
+                'width': max_col - min_col + 1,
+                'height': max_row - min_row + 1
+            })
+        
+        return infos
+    
+    def read_with_filled_merged(self, sheet_name=None):
+        """
+        读取 Excel 并填充合并单元格
+        
+        返回:
+            pandas DataFrame
+        """
+        ws = self.wb[sheet_name] if sheet_name else self.wb.active
+        
+        # 读取所有数据
+        data = []
+        for row in ws.iter_rows(values_only=True):
+            data.append(list(row))
+        
+        df = pd.DataFrame(data)
+        
+        # 填充合并单元格
+        for merged_range in ws.merged_cells.ranges:
+            min_col, min_row, max_col, max_row = merged_range.bounds
+            
+            r_start = min_row - 1
+            r_end = max_row
+            c_start = min_col - 1
+            c_end = max_col
+            
+            value = df.iloc[r_start, c_start]
+            
+            if value is not None:
+                df.iloc[r_start:r_end, c_start:c_end] = value
+        
+        return df
+    
+    def unmerge_and_fill(self, sheet_name=None, output_path=None):
+        """
+        取消合并单元格并填充值，保存为新文件
+        
+        参数:
+            sheet_name: 工作表名称
+            output_path: 输出文件路径
+        
+        返回:
+            修改后的工作簿对象
+        """
+        ws = self.wb[sheet_name] if sheet_name else self.wb.active
+        
+        # 缓存所有合并区域（遍历过程中不能修改集合）
+        merged_ranges = list(ws.merged_cells.ranges)
+        
+        for merged_range in merged_ranges:
+            min_col, min_row, max_col, max_row = merged_range.bounds
+            
+            # 获取左上角的值
+            top_left_value = ws.cell(row=min_row, column=min_col).value
+            
+            # 取消合并
+            ws.unmerge_cells(str(merged_range))
+            
+            # 填充值
+            for row in range(min_row, max_row + 1):
+                for col in range(min_col, max_col + 1):
+                    ws.cell(row=row, column=col).value = top_left_value
+        
+        # 保存文件
+        if output_path:
+            self.wb.save(output_path)
+        
+        return self.wb
+    
+    def close(self):
+        """关闭工作簿"""
+        self.wb.close()
+```
+
+### 权限矩阵合并单元格处理
+
+权限矩阵文档中常见的合并情况：
+
+#### 1. 行方向合并（一级菜单跨多行）
+
+```
+| 一级菜单   | 二级菜单/功能 | 权限 |
+|-----------|--------------|------|
+| 用户管理   | 创建用户     | √    |
+| (合并)    | 删除用户     | √    |
+| (合并)    | 修改用户     | ×    |
+```
+
+**处理策略**：使用 `read_excel_with_merged_cells()` 自动填充。
+
+#### 2. 列方向合并（表头分组）
+
+```
+|           | 生态经理     | 技术专家组    |
+|           | test1020    | test1021     |
+|-----------|-------------|--------------|
+| 功能A     | √           | ×            |
+```
+
+**处理策略**：识别多行表头，合并列名。
+
+```python
+def parse_multirow_header(df, header_rows=2):
+    """
+    处理多行表头
+    
+    参数:
+        df: 已填充合并单元格的 DataFrame
+        header_rows: 表头行数
+    
+    返回:
+        带合并表头的 DataFrame
+    """
+    # 提取表头
+    headers = df.iloc[:header_rows]
+    data = df.iloc[header_rows:].reset_index(drop=True)
+    
+    # 合并多行表头
+    new_columns = []
+    for col_idx in range(len(headers.columns)):
+        col_parts = headers.iloc[:, col_idx].dropna().unique()
+        col_name = ' - '.join(str(p) for p in col_parts)
+        new_columns.append(col_name if col_name else f'col_{col_idx}')
+    
+    data.columns = new_columns
+    return data
+```
+
+#### 3. 完整权限矩阵解析流程
+
+```python
+def parse_permission_matrix_with_merged_cells(file_path, sheet_name=None):
+    """
+    解析权限矩阵（正确处理合并单元格）
+    
+    参数:
+        file_path: Excel 文件路径
+        sheet_name: 工作表名称
+    
+    返回:
+        permission_matrix: 权限矩阵字典
+        workflow_nodes: 流程节点列表
+    """
+    handler = ExcelMergedCellHandler(file_path)
+    
+    # 读取并填充合并单元格
+    df = handler.read_with_filled_merged(sheet_name)
+    
+    # 检测表头行数
+    header_rows = detect_header_rows(df)
+    if header_rows > 1:
+        df = parse_multirow_header(df, header_rows)
+    else:
+        df.columns = df.iloc[0]
+        df = df.iloc[1:].reset_index(drop=True)
+    
+    # 解析权限矩阵
+    permission_matrix = {}
+    workflow_nodes = []
+    
+    # 获取角色列（排除功能列）
+    role_columns = [col for col in df.columns if col not in ['一级菜单', '二级菜单', '功能', '流程节点']]
+    
+    for _, row in df.iterrows():
+        function_name = row.get('二级菜单') or row.get('功能')
+        if not function_name:
+            continue
+        
+        # 记录权限
+        permission_matrix[function_name] = {}
+        for role_col in role_columns:
+            permission_matrix[function_name][role_col] = parse_permission_symbol(row.get(role_col))
+        
+        # 记录流程节点
+        workflow_nodes.append({
+            'node_name': function_name,
+            'required_roles': [role for role, has_perm in permission_matrix[function_name].items() if has_perm]
+        })
+    
+    handler.close()
+    return permission_matrix, workflow_nodes
+
+def detect_header_rows(df):
+    """
+    检测表头行数
+    
+    通过检查第一列是否有连续空值来判断
+    """
+    first_col = df.iloc[:, 0]
+    empty_count = 0
+    for val in first_col:
+        if pd.isna(val):
+            empty_count += 1
+        else:
+            break
+    return min(empty_count + 1, 3)  # 最多3行表头
+```
+
+### Bash 工具调用示例
+
+```bash
+# 使用 Python 读取合并单元格
+uv run --with openpyxl --with pandas python -X utf8 -c "
+from openpyxl import load_workbook
+import pandas as pd
+
+file_path = 'C:\\\\Users\\\\wang_\\\\Desktop\\\\工作簿1.xlsx'
+wb = load_workbook(file_path, data_only=True)
+ws = wb.active
+
+# 读取数据
+data = [list(row) for row in ws.iter_rows(values_only=True)]
+df = pd.DataFrame(data)
+
+# 填充合并单元格
+for merged_range in ws.merged_cells.ranges:
+    min_col, min_row, max_col, max_row = merged_range.bounds
+    value = df.iloc[min_row - 1, min_col - 1]
+    df.iloc[min_row-1:max_row, min_col-1:max_col] = value
+
+wb.close()
+
+# 显示结果
+print(df.head(10).to_string())
+"
+```
+
+### 注意事项
+
+1. **索引转换**：openpyxl 使用 1-indexed，pandas 使用 0-indexed，注意转换
+2. **空值处理**：填充前检查左上角值是否为 None
+3. **性能考虑**：大文件可能有较多合并单元格，考虑缓存
+4. **格式保留**：`data_only=True` 会丢失公式，如需保留公式则设为 False
+
 ### Bash 工具调用示例
 
 ```bash
