@@ -39,10 +39,11 @@
 - 向用户发送通知和请求
 - 接收用户确认并继续流程
 
-### 7. 多窗口协调
-- 管理浏览器标签页的创建和分配
+### 7. 多 Chrome 实例协调
+- 管理 Chrome 实例和 browser-use session 的创建与分配
 - 协调不同账号的登录状态
-- 分配窗口用于不同目的
+- 确保会话结束时成对关闭 session 和 Chrome 实例
+- 分配实例用于不同目的（探索、越权测试）
 
 ### 8. 并行调度
 - 启动探索流水线和安全测试并行运行
@@ -104,9 +105,13 @@
                 └──────────┬───────────────┘
                            ↓
     ┌─────────────────────────────────────────────────────────────────────┐
-    │  共享状态层: events.json | sessions.json | windows.json            │
+    │  共享状态层: chrome_instances.json | sessions.json | events.json   │
     └─────────────────────────────────────────────────────────────────────┘
 ```
+
+**工具使用优先级**：
+1. **browser-use CLI + Skill**：主要使用方式，用于多账号独立 Chrome 实例管理
+2. **Playwright MCP**：保留用于特殊情况，如需要更灵活的 API 或完整的 Cookie 访问
 
 ## 事件类型与处理
 
@@ -925,3 +930,301 @@ Coordinator:
 | `auto_sync_defaults.path_pattern` | 路径过滤 | `null`（无过滤） |
 | `auto_sync_defaults.status_code` | 状态码过滤 | `null`（无过滤） |
 | `auto_sync_defaults.require_response` | 是否要求响应 | `true` |
+
+---
+
+## 流程审批场景调度
+
+### 概述
+
+流程审批场景是 Web 应用中常见的业务场景，具有以下特点：
+- 多个审批节点按顺序执行
+- 每个节点需要特定角色的账号操作
+- 审批操作不可逆
+
+Coordinator Agent 负责协调流程审批场景的测试，包括：
+- 识别流程审批场景
+- 调度多账号按顺序登录和操作
+- 协调 API 发现和越权测试
+
+### 场景识别
+
+当满足以下条件时，识别为流程审批场景：
+
+1. **权限文档包含审批流程**：AccountParser 解析的 `workflow_config.json` 包含多个节点
+2. **功能描述包含审批关键词**：如"审批"、"审核"、"同意"、"驳回"等
+3. **多角色依赖**：一个流程需要多个角色按顺序操作
+
+```javascript
+function detectWorkflowApprovalScenario(workflowConfig) {
+  if (!workflowConfig.workflows || workflowConfig.workflows.length === 0) {
+    return false;
+  }
+  
+  for (const workflow of workflowConfig.workflows) {
+    if (workflow.nodes && workflow.nodes.length > 1) {
+      // 多节点流程，可能是审批场景
+      return true;
+    }
+  }
+  
+  return false;
+}
+```
+
+### 多账号调度流程
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  1. 解析流程配置                                                  │
+│     读取 result/workflow_config.json                            │
+│     确定流程节点和所需角色                                         │
+└─────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  2. 创建多账号 Chrome 实例                                        │
+│     为每个角色创建独立的 Chrome 实例和 browser-use session         │
+│     - 生态经理 → Chrome 端口 9222, session: manager_001          │
+│     - 技术评估专家组组长 → Chrome 端口 9223, session: leader_001  │
+│     - 技术评估专家组 → Chrome 端口 9224, session: expert_001     │
+└─────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  3. 按顺序执行审批操作                                            │
+│     for each node in workflow.nodes:                            │
+│       - 切换到对应角色的 Chrome 实例                              │
+│       - Form Agent 执行审批操作                                  │
+│       - 等待请求被 BurpBridge 记录                               │
+│       - Scout Agent 分析网络请求，更新 workflow_config.json      │
+└─────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  4. 触发越权测试                                                  │
+│     通知 Security Agent 对已发现的 API 执行越权测试               │
+│     （越权测试通过请求重放，不影响原流程状态）                      │
+└─────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  5. 继续下一个审批节点                                            │
+│     切换到下一个角色的 Chrome 实例                                │
+│     执行下一个审批操作                                            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 多 Chrome 实例配置
+
+```json
+{
+  "chrome_instances": [
+    {
+      "instance_id": "chrome_manager_001",
+      "account_id": "test1020",
+      "role": "生态经理",
+      "cdp_port": 9222,
+      "user_data_dir": "C:\\temp\\chrome-manager-001",
+      "browser_use_session": "manager_001"
+    },
+    {
+      "instance_id": "chrome_leader_001",
+      "account_id": "test1021",
+      "role": "技术评估专家组组长",
+      "cdp_port": 9223,
+      "user_data_dir": "C:\\temp\\chrome-leader-001",
+      "browser_use_session": "leader_001"
+    },
+    {
+      "instance_id": "chrome_expert_001",
+      "account_id": "test1022",
+      "role": "技术评估专家组",
+      "cdp_port": 9224,
+      "user_data_dir": "C:\\temp\\chrome-expert-001",
+      "browser_use_session": "expert_001"
+    }
+  ]
+}
+```
+
+### 审批流程执行示例
+
+```javascript
+// 流程审批执行函数
+async function executeWorkflowApproval(workflowConfig) {
+  const workflow = workflowConfig.workflows[0];
+  
+  for (const node of workflow.nodes) {
+    // 1. 获取该节点需要的角色和账号
+    const requiredRole = node.required_roles[0];
+    const account = findAccountByRole(requiredRole);
+    
+    // 2. 切换到对应账号的 Chrome 实例
+    const chromeInstance = getChromeInstance(account.account_id);
+    await switchToInstance(chromeInstance);
+    
+    // 3. 执行审批操作
+    await formAgent.executeApproval({
+      node_name: node.node_name,
+      action: node.actions[0],
+      account_id: account.account_id
+    });
+    
+    // 4. 等待请求被记录
+    await sleep(2000);
+    
+    // 5. Scout Agent 分析网络请求
+    await scoutAgent.analyzeNetworkRequests({
+      filter_by_menu: node.menu_path
+    });
+    
+    // 6. 更新 workflow_config.json
+    updateWorkflowConfig(node, discoveredApi);
+    
+    // 7. 触发越权测试（不影响原流程）
+    await securityAgent.testAuthorization({
+      node_id: node.node_id,
+      api_endpoint: discoveredApi.url,
+      all_roles: getAllConfiguredRoles()
+    });
+    
+    // 8. 等待越权测试完成
+    await waitForAuthorizationTest(node.node_id);
+  }
+}
+```
+
+### 越权测试与正常流程解耦
+
+越权测试通过请求重放实现，不影响正常审批流程：
+
+```
+正常审批流程：
+┌─────────────────────────────────────────────────────────────┐
+│ [账号A] 执行审批 → 请求记录到 BurpBridge → 流程状态更新       │
+└─────────────────────────────────────────────────────────────┘
+
+越权测试（并行，不影响原流程）：
+┌─────────────────────────────────────────────────────────────┐
+│ [账号B] 获取审批请求 → 用账号B的Cookie重放 → 分析响应        │
+│ [账号C] 获取审批请求 → 用账号C的Cookie重放 → 分析响应        │
+│ [账号D] 获取审批请求 → 用账号D的Cookie重放 → 分析响应        │
+│                                                             │
+│ 结果：只有账号A的审批真正执行了，BCD只是请求重放测试          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 事件处理
+
+#### API_DISCOVERED 事件
+
+当 Scout Agent 发现审批 API 时：
+
+```json
+{
+  "event_type": "API_DISCOVERED",
+  "source_agent": "Scout Agent",
+  "priority": "normal",
+  "payload": {
+    "api_url": "/api/workflow/terminate",
+    "method": "POST",
+    "workflow_id": "software_nre_approval",
+    "node_id": "submit_terminate"
+  }
+}
+```
+
+**处理方式**：
+1. 更新 `workflow_config.json` 中的节点信息
+2. 标记节点 `discovered: true`
+3. 通知 Security Agent 准备越权测试
+
+#### WORKFLOW_NODE_COMPLETED 事件
+
+当一个审批节点操作完成时：
+
+```json
+{
+  "event_type": "WORKFLOW_NODE_COMPLETED",
+  "source_agent": "Form Agent",
+  "priority": "normal",
+  "payload": {
+    "workflow_id": "software_nre_approval",
+    "node_id": "submit_terminate",
+    "status": "success",
+    "next_node": "nre_apply_review"
+  }
+}
+```
+
+**处理方式**：
+1. 记录节点完成状态
+2. 触发 Security Agent 对该节点的越权测试
+3. 准备执行下一个节点
+
+### 测试进度跟踪
+
+```json
+{
+  "workflow_test_progress": {
+    "workflow_id": "software_nre_approval",
+    "total_nodes": 5,
+    "completed_nodes": 2,
+    "nodes_status": [
+      {
+        "node_id": "submit_terminate",
+        "status": "completed",
+        "approval_done": true,
+        "api_discovered": true,
+        "authorization_tested": true,
+        "vulnerabilities_found": 0
+      },
+      {
+        "node_id": "nre_apply_review",
+        "status": "in_progress",
+        "approval_done": true,
+        "api_discovered": true,
+        "authorization_tested": false,
+        "vulnerabilities_found": 0
+      }
+    ]
+  }
+}
+```
+
+### 错误处理
+
+#### 审批操作失败
+
+```
+处理方式：
+1. 记录失败节点和原因
+2. 尝试重新执行（最多 3 次）
+3. 如果仍失败，跳过该节点继续下一个
+4. 创建 WORKFLOW_ERROR 事件
+```
+
+#### 越权测试失败
+
+```
+处理方式：
+1. 记录测试失败详情
+2. 不影响正常审批流程
+3. 在最终报告中标注
+```
+
+### 配置参数
+
+```json
+{
+  "workflow_test_config": {
+    "enabled": true,
+    "auto_discover_apis": true,
+    "auto_test_authorization": true,
+    "test_all_roles": true,
+    "continue_on_error": true,
+    "max_retries": 3
+  }
+}
+```

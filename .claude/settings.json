@@ -7,6 +7,7 @@
     "deny": []
   },
   "enabledPlugins": {
-    "mongodb@claude-plugins-official": true
+    "mongodb@claude-plugins-official": true,
+    "document-skills@anthropic-agent-skills": true
   }
 }

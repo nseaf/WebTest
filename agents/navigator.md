@@ -16,11 +16,11 @@
 - 过滤已访问的URL
 - 处理无效链接
 
-### 3. 多窗口管理
-- 创建和管理多个浏览器标签页
-- 切换活动窗口
-- 为不同窗口分配不同账号
-- 协调多窗口操作
+### 3. 多 Chrome 实例管理
+- 创建和管理多个独立的 Chrome 实例
+- 为每个实例分配不同的 CDP 端口和用户数据目录
+- 管理 browser-use session 与 Chrome 实例的绑定
+- 成对关闭 session 和 Chrome 实例
 
 ### 4. 会话状态管理
 - 检测当前登录状态
@@ -37,6 +37,128 @@
 | max_pages | 50 | 最大页面数量 |
 | same_domain_only | true | 是否限制同域名 |
 | ignore_patterns | [] | 忽略的URL模式 |
+
+## Chrome 实例池管理
+
+Navigator Agent 负责管理独立的 Chrome 实例池，支持多账号并行测试。
+
+### 实例创建流程
+
+1. **检查现有实例**
+   - 读取 `result/chrome_instances.json`
+   - 检查是否已存在对应 account_id 的实例
+
+2. **分配端口和目录**
+   - 如果 `config/accounts.json` 中有 `chrome_config`，使用预定义配置
+   - 否则，从 `chrome_instances.json` 的 `next_port` 分配新端口
+
+3. **查找 Chrome 路径**（运行时检测，不硬编码）
+
+   ```powershell
+   # Windows
+   $chromePath = $env:CHROME_PATH
+   if (-not $chromePath) {
+     $candidates = @(
+       "C:\Program Files\Google\Chrome\Application\chrome.exe",
+       "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+       "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+     )
+     foreach ($p in $candidates) {
+       if (Test-Path $p) { $chromePath = $p; break }
+     }
+   }
+   
+   # macOS
+   $chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+   
+   # Linux
+   $chromePath = "/usr/bin/google-chrome"
+   ```
+
+4. **启动 Chrome**
+
+   ```powershell
+   # Windows (PowerShell)
+   Start-Process $chromePath -ArgumentList @(
+     "--proxy-server=http://127.0.0.1:8080",
+     "--remote-debugging-port=$cdpPort",
+     "--user-data-dir=$userDataDir"
+   )
+   
+   # macOS / Linux
+   & $chromePath --proxy-server=http://127.0.0.1:8080 --remote-debugging-port=$cdpPort --user-data-dir=$userDataDir &
+   ```
+
+5. **等待 Chrome 就绪**
+
+   ```powershell
+   # 检查 CDP 端口是否可访问
+   $maxRetries = 10
+   for ($i = 0; $i -lt $maxRetries; $i++) {
+     try {
+       Invoke-WebRequest -Uri "http://localhost:$cdpPort/json/version" -TimeoutSec 2
+       break
+     } catch {
+       Start-Sleep -Seconds 1
+     }
+   }
+   ```
+
+6. **获取 PID 并记录**
+
+   ```powershell
+   # 通过端口查找 PID (Windows)
+   $connections = netstat -ano | findstr ":$cdpPort"
+   $pid = ($connections -split '\s+')[-1]
+   ```
+
+7. **更新注册表**
+   - 写入 `result/chrome_instances.json`
+   - 写入 `result/sessions.json`
+
+### 实例关闭流程
+
+**重要：必须成对关闭，且只关闭目标实例**
+
+```powershell
+# 1. 关闭 browser-use session
+browser-use --session {session_name} close
+
+# 2. 从 chrome_instances.json 获取 PID
+# 读取 result/chrome_instances.json 获取 pid
+
+# 3. 关闭指定 PID 的 Chrome (Windows)
+taskkill /PID $pid /F
+
+# 4. 清理记录
+# - 从 chrome_instances.json 移除记录
+# - 更新 sessions.json 状态为 "closed"
+```
+
+### 禁止操作
+
+- **绝对不要**使用 `taskkill /F /IM chrome.exe` - 会关闭所有 Chrome
+- **绝对不要**使用 `pkill -f "Google Chrome"` - 同上
+- **关闭前必须确认 PID** - 确保只关闭目标实例
+
+### 端口分配规则
+
+- 预定义端口（accounts.json）：使用预定义值
+- 自动分配：从 9222 开始递增
+- 端口范围：9222-9322（最多100个实例）
+- 启动前检测端口是否被占用
+
+### 使用 browser-use CLI 连接
+
+Chrome 启动后，使用 browser-use CLI 连接：
+
+```bash
+# 连接到已启动的 Chrome
+browser-use --session {session_name} --cdp-url http://localhost:{cdp_port} open {url}
+
+# 或使用 /browser-use Skill
+/browser-use --session {session_name} --cdp-url http://localhost:{cdp_port} open {url}
+```
 
 ## 状态管理
 
@@ -150,64 +272,110 @@ function handleSessionExpired(window_id, account_id) {
 }
 ```
 
-## 多窗口操作
+## 多 Chrome 实例操作
 
-### 窗口创建与管理
+### 实例创建与管理
+
+每个账号对应一个独立的 Chrome 实例，而非标签页。
 
 ```javascript
-// 创建新标签页
-async function createWindow(purpose, account_id) {
-  // 使用 Playwright 创建新标签页
-  const newTab = await browser_tabs({ action: "new" });
-
-  // 注册窗口
-  const windowRecord = {
-    "window_id": `window_${Date.now()}`,
-    "tab_index": newTab.index,
-    "assigned_account": account_id,
-    "purpose": purpose,
-    "status": "active",
-    "cookies_valid": false,
-    "login_status": "logged_out"
+// 创建新的 Chrome 实例和 browser-use session
+async function createChromeInstance(account_id) {
+  // 1. 从 accounts.json 获取 chrome_config
+  const account = getAccount(account_id);
+  const config = account.chrome_config || {};
+  
+  // 2. 分配端口和目录
+  const cdpPort = config.cdp_port || getNextAvailablePort();
+  const userDataDir = config.user_data_dir || `C:\\temp\\chrome-${account_id}`;
+  const sessionName = config.session_name || account_id;
+  
+  // 3. 启动 Chrome（通过 Bash 工具执行）
+  // Windows: Start-Process $chromePath -ArgumentList @(...)
+  // macOS/Linux: $chromePath --proxy-server=... &
+  
+  // 4. 等待 Chrome 就绪
+  // 检查 http://localhost:$cdpPort/json/version
+  
+  // 5. 获取 PID 并记录
+  const pid = getPidByPort(cdpPort);
+  
+  // 6. 注册实例
+  const instanceRecord = {
+    "instance_id": `chrome_${account_id}`,
+    "session_name": sessionName,
+    "account_id": account_id,
+    "cdp_port": cdpPort,
+    "user_data_dir": userDataDir,
+    "pid": pid,
+    "status": "running",
+    "created_at": new Date().toISOString()
   };
-
-  // 写入窗口注册表
-  addWindowRecord(windowRecord);
-
-  return windowRecord;
+  
+  // 写入 chrome_instances.json
+  addChromeInstance(instanceRecord);
+  
+  // 7. 更新 sessions.json
+  updateSession(account_id, {
+    "session_id": `session_${account_id}`,
+    "browser_use_session": sessionName,
+    "chrome_instance_id": `chrome_${account_id}`,
+    "cdp_url": `http://localhost:${cdpPort}`
+  });
+  
+  return instanceRecord;
 }
 
-// 切换窗口
-async function switchWindow(window_id) {
-  const window = getWindow(window_id);
-  await browser_tabs({ action: "select", index: window.tab_index });
+// 关闭 Chrome 实例和 browser-use session
+async function closeChromeInstance(session_name) {
+  // 1. 关闭 browser-use session
+  // browser-use --session {session_name} close
+  
+  // 2. 获取 Chrome PID
+  const instance = getChromeInstanceBySession(session_name);
+  
+  // 3. 关闭指定 PID 的 Chrome
+  // taskkill /PID {pid} /F (Windows)
+  // kill {pid} (macOS/Linux)
+  
+  // 4. 清理记录
+  removeChromeInstance(instance.instance_id);
+  updateSession(instance.account_id, { "status": "closed" });
 }
-
-// 窗口用途定义
-const windowPurposes = {
-  "primary_exploration": "主探索窗口，用于发现页面和功能",
-  "idor_testing": "越权测试窗口，用于重放请求测试越权漏洞",
-  "secondary_exploration": "次级探索窗口，用于并行探索",
-  "monitoring": "监控窗口，用于观察状态变化"
-};
 ```
 
-### 多账号窗口协调
+### 多账号实例协调
 
 ```javascript
-// 为越权测试准备窗口
-async function prepareIdorWindows() {
-  // 窗口1: Admin账号
-  const adminWindow = await createWindow("primary_exploration", "admin_001");
-  await loginAccount("admin_001", adminWindow.window_id);
+// 为越权测试准备多个 Chrome 实例
+async function prepareIdorInstances() {
+  // 实例1: Admin账号
+  const adminInstance = await createChromeInstance("admin_001");
+  await loginAccount("admin_001");
+  
+  // 实例2: User账号
+  const userInstance = await createChromeInstance("user_001");
+  await loginAccount("user_001");
+  
+  return { adminInstance, userInstance };
+}
 
-  // 窗口2: User账号
-  const userWindow = await createWindow("idor_testing", "user_001");
-  await loginAccount("user_001", userWindow.window_id);
-
-  return { adminWindow, userWindow };
+// 清理所有实例
+async function cleanupAllInstances() {
+  const instances = getChromeInstances();
+  for (const instance of instances) {
+    await closeChromeInstance(instance.session_name);
+  }
 }
 ```
+
+### 实例对应关系表
+
+| Account ID | Session 名 | CDP 端口 | User Data Dir | 用途 |
+|------------|-----------|---------|---------------|------|
+| admin_001 | admin_001 | 9222 | C:\temp\chrome-admin-001 | 管理员账号 |
+| user_001 | user_001 | 9223 | C:\temp\chrome-user-001 | 普通用户账号 |
+| guest_001 | guest_001 | 9224 | C:\temp\chrome-guest-001 | 访客账号 |
 
 ## 工作流程
 
@@ -576,12 +744,14 @@ const waitStrategies = {
 
 ## 数据存储路径
 
-| 数据类型 | 路径 |
-|---------|------|
-| 窗口注册 | `result/windows.json` |
-| 会话状态 | `result/sessions.json` |
-| 事件队列 | `result/events.json` |
-| 访问记录 | `result/pages.json` |
+| 数据类型 | 路径 | 说明 |
+|---------|------|------|
+| Chrome 实例注册 | `result/chrome_instances.json` | Chrome 实例池管理 |
+| 会话状态 | `result/sessions.json` | 账号会话和 browser-use session 绑定 |
+| 事件队列 | `result/events.json` | Agent 间通信事件 |
+| 访问记录 | `result/pages.json` | 页面访问历史 |
+| 窗口注册 | `result/windows.json` | 窗口用途和账号分配 |
+| 账号配置 | `config/accounts.json` | 静态账号配置和 Chrome 配置 |
 
 ## 注意事项
 

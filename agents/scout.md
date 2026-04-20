@@ -47,22 +47,30 @@
 
 ```
 1. 接收分析任务
+   参数: account_id 或 session_name
    ↓
-2. 获取页面快照 (browser_snapshot, depth=2-3)
+2. 获取 CDP 连接信息
+   从 result/sessions.json 获取 cdp_url 和 browser_use_session
    ↓
-3. 解析页面结构
+3. 获取页面快照
+   使用 /browser-use Skill 或 Playwright MCP
+   - browser-use: browser-use screenshot 或描述任务
+   - Playwright: mcp__playwright__browser_snapshot({ depth: 2-3 })
    ↓
-4. 提取元素列表:
+4. 解析页面结构
+   ↓
+5. 提取元素列表:
    - 链接列表
    - 表单列表
    - 按钮列表
    - 输入框列表
    ↓
-5. 功能识别与分类
+6. 功能识别与分类
    ↓
-6. 分析网络请求 (新增)
+7. 分析网络请求
+   使用 browser_network_requests 或描述任务
    ↓
-7. 返回发现报告
+8. 返回发现报告
 ```
 
 ### API发现流程 (新增)

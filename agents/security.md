@@ -7,7 +7,8 @@
 执行安全测试前，请确认以下环境已就绪：
 - Burp Suite 已启动并加载 BurpBridge 插件（REST API 在 http://localhost:8090）
 - MongoDB 服务运行中（存储历史记录和重放结果）
-- Playwright 浏览器配置使用 Burp 代理（127.0.0.1:8080）
+- Chrome 实例已配置使用 Burp 代理（127.0.0.1:8080）
+- browser-use session 已创建并连接到对应的 Chrome 实例
 
 ## 重要：MCP 工具调用格式
 
@@ -61,7 +62,7 @@ mcp__burpbridge__get_auto_sync_status(input)  // ❌ input 必须是对象格式
 - 支持请求修改进行参数变异测试
 
 ### 5. 注入测试
-- 通过 Playwright 提交注入 payload
+- 通过 browser-use CLI 或 Playwright 提交注入 payload
 - 观察响应判断是否存在漏洞
 
 ### 6. 并行工作模式
@@ -825,3 +826,410 @@ db.replays.findOne({ replayId: "uuid-xxx" })
 | 仅 API | 路径过滤 | `path_pattern: "/api/*"` |
 | 仅数据操作 | 方法过滤 | `methods: ["GET", "POST", "PUT", "DELETE"]` |
 | 成功请求 | 状态码过滤 | `status_code: 200` |
+
+---
+
+## 流程审批越权测试模式
+
+### 概述
+
+流程审批场景具有特殊性：审批操作是不可逆的，用正常账号审批后流程状态改变，无法在原流程上测试其他账户的越权。
+
+**解决方案**：请求重放测试 - 不实际执行审批操作，而是拦截请求并用其他角色的认证信息重放，分析响应判断是否存在越权漏洞。
+
+### 核心原理
+
+```
+正常审批流程：
+┌─────────────────────────────────────────────────────────────┐
+│ 1. 账号A 登录，执行审批操作                                    │
+│ 2. 请求通过 Burp 代理，被 BurpBridge 捕获                      │
+│ 3. 请求记录到 MongoDB（包含完整请求头和请求体）                 │
+└─────────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 越权测试（不影响原流程）：                                      │
+│ 4. Security Agent 获取审批请求详情                            │
+│ 5. 使用其他角色的 Cookie 重放该请求                            │
+│ 6. Analyzer Agent 分析响应：                                  │
+│    - 如果返回"无权限"：安全                                    │
+│    - 如果返回"审批成功"：越权漏洞！                            │
+│ 7. 原流程状态不变，可继续正常审批                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 配置文件
+
+流程审批测试依赖 `result/workflow_config.json`：
+
+```json
+{
+  "$schema": "workflow_config_schema",
+  "workflows": [
+    {
+      "workflow_id": "software_nre_approval",
+      "workflow_name": "软件NRE审批流程",
+      "nodes": [
+        {
+          "node_id": "submit_terminate",
+          "node_name": "提交终止",
+          "menu_path": ["软件NRE"],
+          "actions": ["提交"],
+          "required_roles": ["生态经理"],
+          "api_endpoint": null,
+          "http_method": null,
+          "request_template": null,
+          "discovered": false
+        }
+      ]
+    }
+  ],
+  "api_discovery": {
+    "auto_record_enabled": true,
+    "pending_nodes": [],
+    "discovered_nodes": []
+  },
+  "test_results": {
+    "last_test_at": null,
+    "total_tests": 0,
+    "passed": 0,
+    "failed": 0,
+    "vulnerabilities_found": []
+  }
+}
+```
+
+### 测试流程
+
+#### 阶段1：API 发现（自动记录）
+
+在正常审批流程执行时，Scout Agent 自动记录 API 端点：
+
+```
+1. Navigator Agent 按流程顺序操作
+2. Form Agent 执行审批操作
+3. Scout Agent 监控网络请求
+4. 识别审批相关请求（POST/PUT）
+5. 关联到流程节点（通过菜单路径或请求内容）
+6. 更新 workflow_config.json
+```
+
+**标记请求类型**：
+
+当发现审批请求时，创建 `API_DISCOVERED` 事件：
+
+```json
+{
+  "event_type": "API_DISCOVERED",
+  "source_agent": "Scout Agent",
+  "payload": {
+    "api_url": "/api/workflow/terminate",
+    "method": "POST",
+    "workflow_node": "submit_terminate",
+    "discovered_at": "2026-04-20T10:00:00Z"
+  }
+}
+```
+
+#### 阶段2：越权测试
+
+**步骤1：查询审批请求**
+
+```javascript
+// 从 BurpBridge 查询审批相关请求
+const approvalRequests = await mcp__burpbridge__list_paginated_http_history(input: {
+  "host": "target.example.com",
+  "method": "POST",
+  "path": "/api/workflow/*",
+  "page": 1,
+  "page_size": 50
+});
+```
+
+**步骤2：获取请求详情**
+
+```javascript
+// 获取完整请求内容
+const requestDetail = await mcp__burpbridge__get_http_request_detail(input: {
+  "history_id": "65f1a2b3c4d5e6f7a8b9c0d1"
+});
+```
+
+**步骤3：配置测试角色**
+
+```javascript
+// 为每个角色配置认证上下文
+await mcp__burpbridge__configure_authentication_context(input: {
+  "role": "生态经理",
+  "headers": {
+    "Authorization": "Bearer token_ecosystem_manager"
+  },
+  "cookies": {
+    "session": "session_abc123"
+  }
+});
+
+await mcp__burpbridge__configure_authentication_context(input: {
+  "role": "技术评估专家组组长",
+  "headers": {
+    "Authorization": "Bearer token_tech_leader"
+  },
+  "cookies": {
+    "session": "session_def456"
+  }
+});
+```
+
+**步骤4：批量越权测试**
+
+对每个审批请求，使用所有角色重放：
+
+```javascript
+// 获取流程配置
+const workflowConfig = readJson('result/workflow_config.json');
+
+// 遍历所有审批节点
+for (const workflow of workflowConfig.workflows) {
+  for (const node of workflow.nodes) {
+    if (!node.discovered || !node.api_endpoint) continue;
+    
+    // 查找该节点的请求
+    const requests = await findRequestsByEndpoint(node.api_endpoint);
+    
+    // 获取所有已配置角色
+    const roles = await mcp__burpbridge__list_configured_roles(input: {});
+    
+    // 对每个请求测试所有角色
+    for (const request of requests) {
+      for (const role of roles.roles) {
+        // 跳过有权限的角色（或作为基准测试）
+        const hasPermission = node.required_roles.includes(role);
+        
+        // 重放请求
+        const result = await mcp__burpbridge__replay_http_request_as_role(input: {
+          "history_entry_id": request.id,
+          "target_role": role
+        });
+        
+        // 传递给 Analyzer Agent 分析
+        // ...
+      }
+    }
+  }
+}
+```
+
+### 测试矩阵生成
+
+生成越权测试矩阵，记录每个测试的结果：
+
+```json
+{
+  "test_matrix": {
+    "workflow_id": "software_nre_approval",
+    "test_time": "2026-04-20T10:30:00Z",
+    "nodes": [
+      {
+        "node_id": "submit_terminate",
+        "node_name": "提交终止",
+        "api_endpoint": "/api/workflow/terminate",
+        "tests": [
+          {
+            "role": "生态经理",
+            "expected": "success",
+            "actual": "success",
+            "status": "pass",
+            "replay_id": "uuid-001"
+          },
+          {
+            "role": "技术评估专家组组长",
+            "expected": "forbidden",
+            "actual": "forbidden",
+            "status": "pass",
+            "replay_id": "uuid-002"
+          },
+          {
+            "role": "技术评估专家组",
+            "expected": "forbidden",
+            "actual": "success",
+            "status": "fail",
+            "replay_id": "uuid-003",
+            "vulnerability": {
+              "type": "IDOR",
+              "severity": "high",
+              "description": "无权限角色成功执行审批操作"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### 结果判断规则
+
+Analyzer Agent 根据以下规则判断越权：
+
+| 场景 | 预期响应 | 判定 |
+|------|----------|------|
+| 有权限角色 | 200/201 + 成功响应 | 正常 |
+| 无权限角色 | 401/403 或 错误响应 | 安全 |
+| 无权限角色 | 200 + 成功响应 | **越权漏洞** |
+
+**响应判断逻辑**：
+
+```javascript
+function analyzeResponse(result, expectedPermission) {
+  const statusCode = result.replayedStatusCode;
+  const body = result.replayResponseSummary;
+  
+  if (expectedPermission) {
+    // 有权限，期望成功
+    if (statusCode >= 200 && statusCode < 300) {
+      return { status: "pass", message: "权限正常" };
+    } else {
+      return { status: "warning", message: "有权限但请求失败" };
+    }
+  } else {
+    // 无权限，期望拒绝
+    if (statusCode === 401 || statusCode === 403) {
+      return { status: "pass", message: "权限控制有效" };
+    }
+    if (body.includes("无权限") || body.includes("forbidden") || body.includes("denied")) {
+      return { status: "pass", message: "权限控制有效" };
+    }
+    if (statusCode >= 200 && statusCode < 300) {
+      return { 
+        status: "fail", 
+        vulnerability: "IDOR",
+        message: "发现越权漏洞：无权限角色成功执行操作" 
+      };
+    }
+    return { status: "unknown", message: "需要人工确认" };
+  }
+}
+```
+
+### 与其他 Agent 协作
+
+#### 从 Scout Agent 接收
+
+- API_DISCOVERED 事件：新发现的审批 API
+- 请求关联信息：请求与流程节点的对应关系
+
+#### 从 Form Agent 接收
+
+- 审批操作执行通知
+- 当前登录的角色信息
+
+#### 调用 Analyzer Agent
+
+传递 `replay_id` 进行分析：
+
+```json
+{
+  "task": "analyze_replay",
+  "replay_id": "uuid-001",
+  "context": {
+    "node_name": "提交终止",
+    "role": "技术评估专家组",
+    "expected_permission": false
+  }
+}
+```
+
+#### 向 Coordinator Agent 报告
+
+发现越权漏洞时创建事件：
+
+```json
+{
+  "event_type": "VULNERABILITY_FOUND",
+  "source_agent": "Security Agent",
+  "priority": "critical",
+  "payload": {
+    "vulnerability_type": "IDOR",
+    "workflow_node": "提交终止",
+    "affected_roles": ["技术评估专家组"],
+    "api_endpoint": "/api/workflow/terminate",
+    "severity": "high",
+    "description": "无权限角色可通过重放请求执行审批操作"
+  }
+}
+```
+
+### 更新 workflow_config.json
+
+测试完成后更新测试结果：
+
+```javascript
+// 更新 workflow_config.json
+workflowConfig.test_results = {
+  "last_test_at": new Date().toISOString(),
+  "total_tests": 12,
+  "passed": 11,
+  "failed": 1,
+  "vulnerabilities_found": [
+    {
+      "node_id": "submit_terminate",
+      "role": "技术评估专家组",
+      "type": "IDOR",
+      "severity": "high"
+    }
+  ]
+};
+
+// 标记节点已测试
+for (const node of workflowConfig.workflows[0].nodes) {
+  if (node.discovered) {
+    node.tested_at = new Date().toISOString();
+    node.test_status = "completed";
+  }
+}
+```
+
+### 参数变异测试
+
+除了简单的角色替换，还支持请求参数变异：
+
+```javascript
+// 使用 replay_with_modifications 测试参数越权
+await mcp__burpbridge__replay_with_modifications(input: {
+  "history_entry_id": "审批请求ID",
+  "target_role": "生态经理",
+  "modifications": {
+    "query_param_overrides": {
+      "workflow_id": "其他流程ID",  // 尝试操作其他流程
+      "approver_id": "其他审批人ID"
+    },
+    "json_field_overrides": {
+      "approval_result": "rejected",  // 修改审批结果
+      "approver_comment": "越权测试"
+    }
+  }
+});
+```
+
+### 测试配置
+
+```json
+{
+  "workflow_test_config": {
+    "enabled": true,
+    "auto_test_on_discovery": true,
+    "test_all_roles": true,
+    "include_param_mutation": true,
+    "save_test_matrix": true,
+    "notify_on_vulnerability": true
+  }
+}
+```
+
+### 注意事项
+
+1. **不影响原流程**：越权测试只是请求重放，不会改变流程状态
+2. **测试时机**：在正常审批操作后立即测试，确保请求有效
+3. **角色覆盖**：测试所有已配置的角色，包括有权限和无权限的
+4. **结果验证**：对可疑结果进行二次确认，避免误报
+5. **日志记录**：记录所有测试请求和响应，便于追溯分析

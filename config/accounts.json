@@ -1,7 +1,7 @@
 {
   "$schema": "accounts_schema",
   "description": "测试账号配置文件 - 主数据源（静态配置）",
-  "note": "此文件存储账号基础信息，用于 Agent 登录决策和角色识别。动态认证信息（Cookie/Token）存储在 result/sessions.json",
+  "note": "此文件存储账号基础信息，用于 Agent 登录决策和角色识别。动态认证信息（Cookie/Token）存储在 result/sessions.json。chrome_config 字段预定义每个账号的 Chrome 实例配置。",
   "accounts": [
     {
       "id": "admin_001",
@@ -11,7 +11,12 @@
         "username": "admin@example.com",
         "password": "encrypted:base64_encoded_placeholder"
       },
-      "capabilities": ["read", "write", "delete", "admin_panel"]
+      "capabilities": ["read", "write", "delete", "admin_panel"],
+      "chrome_config": {
+        "cdp_port": 9222,
+        "user_data_dir": "C:\\temp\\chrome-admin-001",
+        "session_name": "admin_001"
+      }
     },
     {
       "id": "user_001",
@@ -21,7 +26,12 @@
         "username": "user@example.com",
         "password": "encrypted:base64_encoded_placeholder"
       },
-      "capabilities": ["read", "write"]
+      "capabilities": ["read", "write"],
+      "chrome_config": {
+        "cdp_port": 9223,
+        "user_data_dir": "C:\\temp\\chrome-user-001",
+        "session_name": "user_001"
+      }
     },
     {
       "id": "guest_001",
@@ -31,7 +41,12 @@
         "username": null,
         "password": null
       },
-      "capabilities": ["read"]
+      "capabilities": ["read"],
+      "chrome_config": {
+        "cdp_port": 9224,
+        "user_data_dir": "C:\\temp\\chrome-guest-001",
+        "session_name": "guest_001"
+      }
     }
   ],
   "login_config": {
