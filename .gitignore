@@ -34,5 +34,11 @@ memory/sessions/session_*.json
 *.tmp
 *.temp
 
+# Temporary files directory
+.tmp/*
+!.tmp/.gitkeep
+!.tmp/*/
+!.tmp/*/.gitkeep
+
 # Playwright MCP snapshots
 .playwright-mcp/

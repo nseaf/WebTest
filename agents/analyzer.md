@@ -447,7 +447,135 @@ mcp__plugin_mongodb_mongodb__find(input: {
 ## 核心原则
 
 > **你不是一个简单的差异检测器，而是业务逻辑越权判别器。**
-> 
+>
 > 只有当低权限用户获得了**违反业务规则的数据**时，才构成漏洞。
-> 
+>
 > 宁可漏报，不可误报。所有判定需有明确证据支撑。
+
+---
+
+## 任务接口定义
+
+### 从Coordinator/Security Agent接收的任务格式
+
+任务以统一的格式下发：
+
+```json
+{
+  "task": "<任务类型>",
+  "parameters": { ... }
+}
+```
+
+### 支持的任务类型
+
+| 任务类型 | 参数 | 说明 | 返回 |
+|----------|------|------|------|
+| `analyze_replay` | replay_id, context | 分析重放结果 | 分析报告 |
+| `analyze_response` | response_data, original_role, replay_role | 分析响应差异 | 分析报告 |
+| `generate_suggestion` | api_endpoint, test_history | 生成探索建议 | 建议报告 |
+
+### 任务参数详细说明
+
+#### analyze_replay 任务
+
+```json
+{
+  "task": "analyze_replay",
+  "parameters": {
+    "replay_id": "uuid-xxx",
+    "context": {
+      "node_name": "提交终止",
+      "role": "技术评估专家组",
+      "expected_permission": false
+    }
+  }
+}
+```
+
+Analyzer Agent 自行使用 MongoDB MCP 查询重放结果。
+
+#### generate_suggestion 任务
+
+```json
+{
+  "task": "generate_suggestion",
+  "parameters": {
+    "api_endpoint": "/api/users/{id}",
+    "test_history": ["IDOR测试完成"],
+    "discovered_at": "2026-04-21T10:00:00Z"
+  }
+}
+```
+
+### 返回格式标准
+
+所有任务返回统一格式：
+
+```json
+{
+  "status": "success|failed|partial",
+  "report": {
+    "analysis_id": "analysis_001",
+    "replay_id": "uuid-xxx",
+    "url": "/api/users/123",
+    "method": "GET",
+    "verdict": "VULNERABLE|SAFE|UNKNOWN",
+    "vulnerability": {
+      "type": "IDOR",
+      "severity": "critical|high|medium|low",
+      "description": "Guest用户可访问Admin用户的个人数据",
+      "matched_rules": ["user_identity_leak"],
+      "evidence": {
+        "sensitive_data_exposed": ["email", "phone"]
+      }
+    }
+  },
+  "events_created": [
+    {
+      "event_type": "VULNERABILITY_FOUND",
+      "payload": { ... }
+    }
+  ],
+  "next_suggestions": [
+    "建议测试其他用户ID: /api/users/124, /api/users/125"
+  ]
+}
+```
+
+### 安全判定返回格式
+
+```json
+{
+  "status": "success",
+  "report": {
+    "verdict": "SAFE",
+    "reason": "低权限角色返回403，权限控制有效"
+  },
+  "events_created": [],
+  "next_suggestions": []
+}
+```
+
+### 探索建议返回格式
+
+```json
+{
+  "status": "success",
+  "report": {
+    "suggestions": [
+      {
+        "type": "parameter_variation",
+        "description": "建议测试ID遍历",
+        "endpoint": "/api/users/{id}",
+        "suggested_tests": ["IDOR", "参数篡改"]
+      }
+    ]
+  },
+  "events_created": [
+    {
+      "event_type": "EXPLORATION_SUGGESTION",
+      "payload": { ... }
+    }
+  ]
+}

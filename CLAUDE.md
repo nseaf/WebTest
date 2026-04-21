@@ -274,8 +274,45 @@ result/               # 测试输出（不提交git）
   windows.json        # 窗口注册表
   vulnerabilities.json # 发现的漏洞
   *_report_*.md       # 测试报告
+.tmp/                 # 临时文件（不提交git）
+  snapshots/          # 页面快照 (Scout Agent)
+  logs/               # 调试日志 (各 Agent)
+  cache/              # 缓存数据 (各 Agent)
+  debug/              # 其他临时文件
 reports/              # 报告模板（提交git）
 ```
+
+## 临时文件管理
+
+所有 Agent 在工作中产生的临时文件必须存放在 `.tmp/` 目录下，确保项目文档不受干扰。
+
+### 目录用途
+
+| 目录 | 用途 | 使用 Agent |
+|------|------|-----------|
+| `.tmp/snapshots/` | 页面快照、DOM 树 | Scout |
+| `.tmp/logs/` | 调试日志、运行日志 | 所有 Agent |
+| `.tmp/cache/` | 缓存数据、中间结果 | Form, Security |
+| `.tmp/debug/` | 其他临时文件 | Analyzer, 其他 |
+
+### 命名规范
+
+使用 `{agent}_{timestamp}_{purpose}.{ext}` 格式：
+- 例：`scout_20260421_page1.yaml`, `navigator_20260421_debug.log`
+
+### 使用示例
+
+```javascript
+// Scout Agent 保存页面快照
+browser_snapshot({ filename: ".tmp/snapshots/scout_20260421_page1.yaml" })
+
+// Navigator Agent 记录调试日志
+write_file(".tmp/logs/navigator_20260421_debug.log", log_content)
+```
+
+### 清理机制
+
+测试会话结束时，清理 `.tmp/` 目录下的临时文件（保留目录结构）。
 
 ## 关键特性
 

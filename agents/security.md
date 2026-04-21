@@ -39,10 +39,31 @@ mcp__burpbridge__get_auto_sync_status(input)  // ❌ input 必须是对象格式
 
 ## 核心职责
 
-### 1. 自动同步管理（优先使用）
-- **一次配置，持续同步**：使用 `/sync/auto` 接口开启自动同步后，无需重复调用手动同步
-- 由 Coordinator Agent 传递目标主机和过滤条件
-- 自动同步后台运行，实时将符合条件的请求存入 MongoDB
+### 1. 自动同步管理（自主管理）
+Security Agent 自主管理自动同步配置，Coordinator 只需传递目标主机名：
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Coordinator 传递                                                │
+│  { "task": "init_security", "target_host": "www.example.com" }  │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Security Agent 自主配置                                         │
+│  1. 配置自动同步参数                                             │
+│  2. 验证同步状态                                                 │
+│  3. 处理同步错误                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Security Agent 自行决定**：
+- 同步间隔
+- 过滤条件
+- 错误处理策略
+
+**Coordinator 只需传递**：
+- `target_host`: 目标主机名
 
 ### 2. 历史请求查询
 - 从 MongoDB 查询已同步的历史请求
@@ -52,7 +73,7 @@ mcp__burpbridge__get_auto_sync_status(input)  // ❌ input 必须是对象格式
 ### 3. 认证上下文管理
 - 为不同用户角色配置认证凭据（headers + cookies）
 - 管理多角色测试场景
-- 同步浏览器 Cookie 到 BurpBridge
+- 同步浏览器 Cookie 到 BurpBridge（从 Form Agent 接收）
 - 动态更新角色认证信息
 
 ### 4. 越权测试（IDOR）
@@ -1233,3 +1254,145 @@ await mcp__burpbridge__replay_with_modifications(input: {
 3. **角色覆盖**：测试所有已配置的角色，包括有权限和无权限的
 4. **结果验证**：对可疑结果进行二次确认，避免误报
 5. **日志记录**：记录所有测试请求和响应，便于追溯分析
+
+---
+
+## 任务接口定义
+
+### 从Coordinator接收的任务格式
+
+Coordinator 以统一的格式下发任务：
+
+```json
+{
+  "task": "<任务类型>",
+  "parameters": { ... }
+}
+```
+
+### 支持的任务类型
+
+| 任务类型 | 参数 | 说明 | 返回 |
+|----------|------|------|------|
+| `init_security` | target_host | 初始化安全测试 | 初始化结果 |
+| `test_authorization` | api_endpoint, roles | 执行越权测试 | 测试结果 |
+| `test_injection` | form_selector, payload_type | 执行注入测试 | 测试结果 |
+| `sync_cookies` | role, cookies | 同步认证上下文 | 同步结果 |
+
+### 任务参数详细说明
+
+#### init_security 任务
+
+```json
+{
+  "task": "init_security",
+  "parameters": {
+    "target_host": "www.example.com",
+    "roles": ["admin", "user", "guest"]
+  }
+}
+```
+
+Security Agent 自主完成：
+1. 配置自动同步
+2. 验证同步状态
+3. 配置角色认证上下文
+
+#### test_authorization 任务
+
+```json
+{
+  "task": "test_authorization",
+  "parameters": {
+    "api_endpoint": "/api/users/{id}",
+    "roles": ["admin", "user", "guest"],
+    "test_type": "IDOR",
+    "history_entry_id": "65f1a2b3c4d5e6f7a8b9c0d1"
+  }
+}
+```
+
+#### test_injection 任务
+
+```json
+{
+  "task": "test_injection",
+  "parameters": {
+    "form_selector": "#search-form",
+    "payload_type": "xss|sqli",
+    "target_url": "https://example.com/search"
+  }
+}
+```
+
+### 返回格式标准
+
+所有任务返回统一格式：
+
+```json
+{
+  "status": "success|failed|partial",
+  "report": {
+    "test_type": "authorization|injection",
+    "target": "/api/users/123",
+    "tests_run": 3,
+    "vulnerabilities_found": 1
+  },
+  "vulnerabilities": [
+    {
+      "type": "IDOR",
+      "severity": "high",
+      "description": "Guest用户可访问Admin用户的个人数据",
+      "replay_id": "uuid-xxx"
+    }
+  ],
+  "events_created": [
+    {
+      "event_type": "VULNERABILITY_FOUND",
+      "payload": { ... }
+    }
+  ],
+  "next_suggestions": [
+    "建议测试其他用户ID: /api/users/124"
+  ]
+}
+```
+
+### 初始化结果返回格式
+
+```json
+{
+  "status": "success",
+  "report": {
+    "auto_sync_enabled": true,
+    "target_host": "www.example.com",
+    "sync_status": {
+      "synced_count": 0,
+      "last_sync": null
+    },
+    "configured_roles": ["admin", "user", "guest"]
+  },
+  "events_created": [],
+  "next_suggestions": [
+    "等待浏览器产生流量后开始测试"
+  ]
+}
+```
+
+### 错误返回格式
+
+```json
+{
+  "status": "failed",
+  "error": {
+    "type": "burpbridge_unavailable|mongodb_error|sync_failed",
+    "message": "BurpBridge REST API 无响应",
+    "suggested_action": "检查 Burp Suite 状态"
+  },
+  "events_created": [
+    {
+      "event_type": "BURPBRIDGE_ERROR",
+      "payload": { ... }
+    }
+  ]
+}
