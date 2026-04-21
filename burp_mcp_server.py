@@ -637,26 +637,45 @@ async def delete_authentication_context(input: DeleteRoleInput) -> dict:
 class ReplayRequestInput(BaseModel):
     """
     重放请求,输入参数:
-    - history_entry_id (str): 历史记录的 MongoDB ObjectId 字符串
+    - history_entry_id (str, optional): 历史记录的 MongoDB ObjectId（从历史记录重放）
+    - replay_id (str, optional): 已重放记录的 ID（从重放记录再次重放）
     - target_role (str): 用于重放的角色
+    - modifications (dict, optional): 请求修改配置
+    
+    注意: history_entry_id 和 replay_id 二选一，不能同时使用。
     """
-    history_entry_id: str
+    history_entry_id: str | None = None
+    replay_id: str | None = None
     target_role: str
+    modifications: dict | None = None
 
 
 @app.tool(
     name="replay_http_request_as_role",
-    description="使用指定角色凭据重放一条历史 HTTP 请求。返回 replay_id 用于查询结果。"
+    description="使用指定角色凭据重放请求。支持两种模式：(1) 从历史记录重放（传入 history_entry_id）；(2) 从重放记录再次重放（传入 replay_id）。可选传入 modifications 进行请求修改。返回 replay_id 用于查询结果。"
 )
 async def replay_http_request_as_role(input: ReplayRequestInput) -> dict:
     """
     Replays a captured HTTP request using credentials for a specific role.
+    Supports two modes: from history entry or from previous replay record.
     Returns a replay_id which can be used to get the result later.
     """
-    payload = {
-        "history_entry_id": input.history_entry_id,  # Note: field name is history_entry_id
-        "target_role": input.target_role
-    }
+    has_history_id = input.history_entry_id is not None and input.history_entry_id.strip() != ""
+    has_replay_id = input.replay_id is not None and input.replay_id.strip() != ""
+    
+    if not has_history_id and not has_replay_id:
+        return {"status": "error", "message": "Missing required field: history_entry_id or replay_id"}
+    if has_history_id and has_replay_id:
+        return {"status": "error", "message": "Only one of history_entry_id or replay_id is allowed"}
+    
+    payload = {"target_role": input.target_role}
+    if has_history_id:
+        payload["history_entry_id"] = input.history_entry_id.strip()
+    else:
+        payload["replay_id"] = input.replay_id.strip()
+    
+    if input.modifications is not None:
+        payload["modifications"] = input.modifications
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         try:
@@ -667,11 +686,15 @@ async def replay_http_request_as_role(input: ReplayRequestInput) -> dict:
             resp.raise_for_status()
             data = resp.json()
 
+            mode_desc = "history entry" if has_history_id else "replay record"
+            source_id = input.history_entry_id if has_history_id else input.replay_id
+
             return {
                 "status": "success",
-                "replay_id": data.get("replay_id"),  # Capture the replay_id
+                "replay_id": data.get("replay_id"),
                 "queue_status": data.get("status"),
-                "message": f"Replay initiated with ID '{data.get('replay_id')}' for history entry '{input.history_entry_id}' as role '{input.target_role}'. Use the replay_id to check results."
+                "source_mode": mode_desc,
+                "message": f"Replay initiated with ID '{data.get('replay_id')}' from {mode_desc} '{source_id}' as role '{input.target_role}'. Use the replay_id to check results."
             }
 
         except httpx.HTTPStatusError as e:
@@ -688,129 +711,140 @@ async def replay_http_request_as_role(input: ReplayRequestInput) -> dict:
             return {"status": "error", "message": f"Unexpected error during replay: {str(e)}"}
 
 
-class BatchReplayInput(BaseModel):
+class ReplayRequestsInput(BaseModel):
     """
-    批量重放请求,输入参数:
-    - history_entry_ids (list[str]): 历史记录的 MongoDB ObjectId 字符串列表
-    - target_role (str): 用于重放的角色
+    统一重放请求工具,输入参数:
+    - history_entry_ids (list[str], optional): 历史记录 ID 列表（从历史记录重放）
+    - replay_ids (list[str], optional): 重放记录 ID 列表（从重放记录再次重放）
+    - target_roles (list[str]): 目标角色列表
+    - modifications (dict, optional): 请求修改配置（对所有请求生效）
     - stop_on_error (bool, optional): 遇到错误是否停止 (默认 False)
+    
+    注意: history_entry_ids 和 replay_ids 二选一，不能同时使用。
     """
-    history_entry_ids: list[str]
-    target_role: str
+    history_entry_ids: list[str] | None = None
+    replay_ids: list[str] | None = None
+    target_roles: list[str]
+    modifications: dict | None = None
     stop_on_error: bool = False
 
 
 @app.tool(
-    name="batch_replay_requests",
-    description="批量重放多个历史请求。使用指定角色凭据重放多条历史 HTTP 请求。"
+    name="replay_requests",
+    description="统一重放请求工具。支持多请求 × 多角色笛卡尔积重放。"
+                "输入 history_entry_ids 或 replay_ids（二选一），以及 target_roles 列表。"
+                "可选 modifications 对所有请求生效。返回每个组合的重放结果。"
 )
-async def batch_replay_requests(input: BatchReplayInput) -> dict:
+async def replay_requests(input: ReplayRequestsInput) -> dict:
     """
-    批量重放多个历史请求。
+    统一重放请求工具，支持笛卡尔积重放。
+    通过并发调用 /scan/single 实现多请求 × 多角色重放。
     """
-    payload = {
-        "history_entry_ids": input.history_entry_ids,
-        "target_role": input.target_role,
-        "stop_on_error": input.stop_on_error
+    has_history_ids = input.history_entry_ids is not None and len(input.history_entry_ids) > 0
+    has_replay_ids = input.replay_ids is not None and len(input.replay_ids) > 0
+    
+    if not has_history_ids and not has_replay_ids:
+        return {"status": "error", "message": "Missing required field: history_entry_ids or replay_ids"}
+    if has_history_ids and has_replay_ids:
+        return {"status": "error", "message": "Only one of history_entry_ids or replay_ids is allowed"}
+    
+    if not input.target_roles or len(input.target_roles) == 0:
+        return {"status": "error", "message": "target_roles must be a non-empty list"}
+    
+    request_ids = input.history_entry_ids if has_history_ids else input.replay_ids
+    id_type = "history_entry_id" if has_history_ids else "replay_id"
+    source_type = "history" if has_history_ids else "replay"
+    
+    # 计算笛卡尔积：requests × roles
+    tasks = []
+    for req_id in request_ids:
+        for role in input.target_roles:
+            tasks.append((req_id, role))
+    
+    total_combinations = len(tasks)
+    
+    async def replay_single(req_id: str, role: str) -> dict:
+        payload = {
+            id_type: req_id,
+            "target_role": role
+        }
+        if input.modifications is not None:
+            payload["modifications"] = input.modifications
+        
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            try:
+                resp = await client.post(
+                    f"{BURP_BRIDGE_URL}/scan/single",
+                    json=payload
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                return {
+                    "request_id": req_id,
+                    "role": role,
+                    "replay_id": data.get("replay_id"),
+                    "status": "success"
+                }
+            except httpx.HTTPStatusError as e:
+                error_msg = ""
+                try:
+                    error_msg = e.response.json().get("error", e.response.text)
+                except:
+                    error_msg = e.response.text
+                return {
+                    "request_id": req_id,
+                    "role": role,
+                    "status": "error",
+                    "error": error_msg,
+                    "http_status": e.response.status_code
+                }
+            except Exception as e:
+                return {
+                    "request_id": req_id,
+                    "role": role,
+                    "status": "error",
+                    "error": str(e)
+                }
+    
+    # 并发执行所有重放任务
+    if input.stop_on_error:
+        # 串行执行，遇到错误停止
+        results = []
+        successful = 0
+        failed = 0
+        stopped_early = False
+        
+        for req_id, role in tasks:
+            result = await replay_single(req_id, role)
+            results.append(result)
+            if result["status"] == "success":
+                successful += 1
+            else:
+                failed += 1
+                stopped_early = True
+                break
+    else:
+        # 并发执行所有任务
+        results = await asyncio.gather(*[replay_single(req_id, role) for req_id, role in tasks])
+        successful = sum(1 for r in results if r["status"] == "success")
+        failed = sum(1 for r in results if r["status"] == "error")
+    
+    return {
+        "status": "completed",
+        "source_type": source_type,
+        "total_requests": len(request_ids),
+        "total_roles": len(input.target_roles),
+        "total_combinations": total_combinations,
+        "successful": successful,
+        "failed": failed,
+        "modifications_applied": input.modifications is not None,
+        "results": results,
+        "message": f"Replay completed: {successful}/{total_combinations} successful. "
+                   f"({len(request_ids)} requests × {len(input.target_roles)} roles)"
     }
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        try:
-            resp = await client.post(
-                f"{BURP_BRIDGE_URL}/scan/batch",
-                json=payload
-            )
-            resp.raise_for_status()
-            data = resp.json()
-
-            return {
-                "status": "success",
-                "total": data.get("total"),
-                "successful": data.get("successful"),
-                "failed": data.get("failed"),
-                "results": data.get("results"),
-                "message": f"Batch replay completed: {data.get('successful')}/{data.get('total')} successful."
-            }
-
-        except httpx.HTTPStatusError as e:
-            error_detail = {}
-            try:
-                error_detail = e.response.json()
-            except:
-                error_detail = {"error_text": e.response.text}
-            return {"status": "error", "message": f"Batch replay failed with status {e.response.status_code}",
-                    "details": error_detail}
-        except httpx.RequestError as e:
-            return {"status": "error", "message": f"Request error during batch replay: {str(e)}"}
-        except Exception as e:
-            return {"status": "error", "message": f"Unexpected error during batch replay: {str(e)}"}
 
 
-class ReplayWithModificationsInput(BaseModel):
-    """
-    带修改的重放请求,输入参数:
-    - history_entry_id (str): 历史记录的 MongoDB ObjectId 字符串
-    - target_role (str): 用于重放的角色
-    - modifications (dict, optional): 请求修改配置
-      - query_param_overrides: URL 查询参数覆盖 {"page": "2"}
-      - query_param_removals: 要移除的查询参数列表 ["debug"]
-      - body_replacement: 完全替换请求体
-      - json_field_overrides: JSON body 字段覆盖 {"user.id": 123}
-      - body_param_overrides: form-data 参数覆盖 {"field": "value"}
-      - header_overrides: Header 覆盖 {"X-Custom": "value"}
-      - header_removals: 要移除的 Header 列表 ["X-Debug-Mode"]
-    """
-    history_entry_id: str
-    target_role: str
-    modifications: dict | None = None
-
-
-@app.tool(
-    name="replay_with_modifications",
-    description="重放请求并应用自定义修改（参数、Body、Headers）。"
-                "支持修改 URL 参数、JSON body 字段、form-data 参数、Headers 等。"
-)
-async def replay_with_modifications(input: ReplayWithModificationsInput) -> dict:
-    """
-    重放请求并应用自定义修改。
-    """
-    payload = {
-        "history_entry_id": input.history_entry_id,
-        "target_role": input.target_role
-    }
-
-    if input.modifications:
-        payload["modifications"] = input.modifications
-
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        try:
-            resp = await client.post(
-                f"{BURP_BRIDGE_URL}/scan/single",
-                json=payload
-            )
-            resp.raise_for_status()
-            data = resp.json()
-
-            return {
-                "status": "success",
-                "replay_id": data.get("replay_id"),
-                "queue_status": data.get("status"),
-                "modifications_applied": input.modifications is not None,
-                "message": f"Replay initiated with ID '{data.get('replay_id')}' for history entry '{input.history_entry_id}' as role '{input.target_role}'."
-            }
-
-        except httpx.HTTPStatusError as e:
-            error_detail = {}
-            try:
-                error_detail = e.response.json()
-            except:
-                error_detail = {"error_text": e.response.text}
-            return {"status": "error", "message": f"Replay with modifications failed with status {e.response.status_code}",
-                    "details": error_detail}
-        except httpx.RequestError as e:
-            return {"status": "error", "message": f"Request error during replay: {str(e)}"}
-        except Exception as e:
-            return {"status": "error", "message": f"Unexpected error during replay: {str(e)}"}
 
 
 class GetReplayResultInput(BaseModel):

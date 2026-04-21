@@ -158,8 +158,8 @@
    检查 success_indicator / failure_indicator
    ↓
 8. 获取 Cookie
-   推荐：使用 Playwright MCP 获取完整 Cookie（包括 HttpOnly）
-   简单场景：通过 browser-use 执行 JavaScript document.cookie
+    主要：使用 browser-use CLI 命令 `browser-use cookies get --json`
+    备用：使用 Playwright MCP 获取完整 Cookie（包括 HttpOnly）
    ↓
 9. 更新会话状态
    写入 result/sessions.json
@@ -181,7 +181,7 @@
 | 打开登录页 | `browser-use --session {name} --cdp-url {url} open {login_url}` |
 | 填写表单 | `/browser-use` Skill：描述任务"在登录表单中输入用户名和密码" |
 | 点击登录 | `browser-use click "#login-btn"` |
-| 获取 Cookie | 使用 Playwright MCP 或描述任务"获取当前页面 Cookie" |
+| 获取 Cookie | `browser-use cookies get --json`（主要）或 Playwright MCP（备用） |
 
 **备用工具：Playwright MCP**
 
@@ -197,8 +197,11 @@
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  1. 获取浏览器 Cookie                                             │
-│     推荐使用 Playwright MCP: browser_evaluate                    │
-│     或通过 /browser-use Skill 执行任务                            │
+│     主要方式：browser-use CLI                                     │
+│       browser-use cookies get --json                              │
+│       browser-use cookies export cookies.json                     │
+│     备用方式：Playwright MCP（可获取 HttpOnly Cookie）            │
+│       mcp__playwright__browser_evaluate                           │
 └─────────────────────────────────────────────────────────────────┘
                                │
                                ▼
@@ -217,7 +220,25 @@
 
 ### Cookie 同步代码示例
 
-**方法1：使用 Playwright MCP（推荐，可获取完整 Cookie 包括 HttpOnly）**
+**方法1：使用 browser-use CLI（主要）**
+
+```bash
+# 获取当前页面的所有 Cookie（JSON 格式）
+browser-use cookies get --json
+
+# 输出格式示例：
+# [{"name": "session", "value": "abc123", "domain": "example.com", ...}]
+
+# 导出 Cookie 到文件
+browser-use cookies export cookies.json
+
+# 转换为 BurpBridge 格式（name -> value 映射）
+# {"session": "abc123", "token": "xyz789"}
+```
+
+**方法2：使用 Playwright MCP（备用）**
+
+用于需要完整 Cookie 访问（包括 HttpOnly）的场景：
 
 ```javascript
 // 使用 mcp__playwright__browser_evaluate 获取 Cookie
@@ -230,13 +251,6 @@ mcp__playwright__browser_evaluate({
 // page.context().cookies() 可获取包括 HttpOnly 的所有 Cookie
 ```
 
-**方法2：通过 browser-use Skill 任务**
-
-```
-/browser-use
-任务描述：获取当前页面的所有 Cookie 并返回
-```
-
 **方法3：从 Chrome Cookie 数据库读取**
 
 对于 HttpOnly Cookie，可以从 `--user-data-dir` 下的 Cookie 数据库文件读取：
@@ -247,38 +261,26 @@ mcp__playwright__browser_evaluate({
 **同步到 BurpBridge**
 
 ```javascript
-// 配置认证上下文
-mcp__burpbridge__configure_authentication_context(input: {
-  "role": "admin",
-  "cookies": cookieDict,
-  "headers": {}
-})
+// browser-use CLI 输出的 Cookie 格式：
+// [{"name": "session", "value": "abc123", "domain": "example.com"}]
 
-// 或导入 Playwright 格式的 Cookie
-mcp__burpbridge__import_playwright_cookies(input: {
-  "role": "admin",
-  "cookies": cookies,
-  "merge_with_existing": true
-})
-```
-
-// 转换为 BurpBridge 格式
+// 转换为 BurpBridge 格式（name -> value 映射）
 const cookieDict = {};
-for (const cookie of cookies) {
+for (const cookie of browserUseCookies) {
   cookieDict[cookie.name] = cookie.value;
 }
 
-// 同步到 BurpBridge
+// 配置认证上下文（推荐）
 mcp__burpbridge__configure_authentication_context(input: {
   "role": "admin",
   "cookies": cookieDict,
   "headers": {}
 })
 
-// 方法2: 使用 import_playwright_cookies (推荐)
+// 或使用 import_playwright_cookies（兼容 Playwright 格式）
 mcp__burpbridge__import_playwright_cookies(input: {
   "role": "admin",
-  "cookies": cookies,  // 直接传递 Playwright 格式
+  "cookies": browserUseCookies,  // browser-use 输出格式兼容
   "merge_with_existing": true
 })
 ```

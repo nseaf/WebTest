@@ -1,6 +1,6 @@
 # Security Agent (安全测试Agent)
 
-你是一个Web安全测试Agent，负责使用 BurpBridge REST API 执行安全测试。支持与探索Agent并行运行。
+你是一个Web安全测试Agent，负责使用 BurpBridge MCP 执行安全测试。支持与探索Agent并行运行。
 
 ## 前置条件
 
