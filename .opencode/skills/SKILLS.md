@@ -21,7 +21,9 @@
 ├── data/                          # 数据管理类Skills
 │   ├── mongodb-writer/            # 实时数据库写入
 │   ├── progress-tracking/         # 访问跟踪与进度控制
-│   └── api-categorization/        # API模块划分与分类
+│   ├── api-categorization/        # API模块划分与分类
+│   ├── excel-merged-cell-handler/ # Excel合并单元格处理器
+│   └── permission-matrix-parser/  # 权限矩阵Excel解析
 │
 ├── security/                      # 安全测试类Skills
 │   ├── idor-testing/              # 越权测试方法论
@@ -59,6 +61,7 @@
 | **Form** | anti-hallucination, agent-contract, shared-browser-state, form-handling, auth-context-sync, mongodb-writer |
 | **Security** | anti-hallucination, agent-contract, idor-testing, injection-testing, auth-context-sync, mongodb-writer, progress-tracking, vulnerability-rating |
 | **Analyzer** | anti-hallucination, agent-contract, vulnerability-rating, mongodb-writer |
+| **account_parser** | anti-hallucination, agent-contract, excel-merged-cell-handler, permission-matrix-parser |
 
 ---
 
