@@ -129,10 +129,23 @@ pip show browser-use
 
 ## Tool Priority Strategy (工具优先级策略)
 
+### 主Agent委派规则
+
+**重要**：webtest (Coordinator) 必须通过Task委派操作，禁止直接执行以下操作：
+
+| 禁止操作 | 必须委派给 | 原因 |
+|---------|-----------|------|
+| 浏览器操作 | Navigator / Form | 多实例管理需要browser-use CLI |
+| 账号解析 | AccountParser | 专业解析逻辑 |
+| 页面分析 | Scout | 专业分析逻辑 |
+| 安全测试 | Security | BurpBridge集成 |
+
+### 工具使用优先级
+
 ```
 Priority 1: Browser Automation
-├─ browser-use CLI (Chrome CDP, 多实例管理)
-└─ Playwright MCP (备用，更灵活)
+├─ browser-use CLI (Chrome CDP, 多实例管理) ← Navigator Agent 使用
+└─ Playwright MCP (备用，更灵活) ← 仅特殊情况下使用
 
 Priority 2: Security Testing
 ├─ BurpBridge MCP (请求同步、重放、认证上下文)
@@ -141,6 +154,34 @@ Priority 2: Security Testing
 Priority 3: Data Management
 ├─ JSON Files (result/*.json)
 └─ MongoDB (burpbridge collections)
+```
+
+### Playwright MCP 使用策略
+
+```
+Playwright MCP 使用规则:
+├─ 主要使用者: Navigator Agent (备用方案)
+├─ Coordinator: 禁止直接使用
+└─ 特殊情况: 当browser-use不可用时，Navigator可选择使用Playwright
+```
+
+### 委派日志
+
+所有委派行为记录在 `result/delegation_log.json`：
+
+```json
+{
+  "delegations": [
+    {
+      "timestamp": "2026-04-22T10:00:00Z",
+      "from_agent": "webtest",
+      "to_agent": "navigator",
+      "task_type": "create_instance",
+      "status": "success"
+    }
+  ],
+  "violations": []
+}
 ```
 
 ---

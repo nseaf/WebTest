@@ -440,3 +440,224 @@ function checkStateTimeout() {
 2. 若失败: Read("skills/workflow/state-machine/SKILL.md")
 3. 此Skill必须加载完成才能继续执行
 ```
+
+---
+
+## 🔄 委派验证机制
+
+### INIT状态委派验证
+
+在INIT状态进入PHASE_1_EXPLORE前，**必须验证**Coordinator已正确委派任务给子Agent：
+
+```javascript
+const delegationVerification = {
+  name: "初始化委派验证",
+  
+  verification_checklist: [
+    {
+      check: "account_parser任务已调用（如需要）",
+      verify: () => {
+        const accountsConfig = readJson("config/accounts.json");
+        const needsParsing = !accountsConfig || Object.keys(accountsConfig).length === 0;
+        if (!needsParsing) return true;
+        
+        // 检查是否有解析日志
+        const delegationLog = readJson("result/delegation_log.json");
+        return delegationLog?.delegations?.some(
+          d => d.to_agent === "account_parser" && d.status === "success"
+        );
+      }
+    },
+    {
+      check: "navigator create_instance任务已调用",
+      verify: () => {
+        // 检查Chrome实例是否由Navigator创建
+        const instances = readJson("result/chrome_instances.json");
+        const delegationLog = readJson("result/delegation_log.json");
+        
+        return instances?.length > 0 && delegationLog?.delegations?.some(
+          d => d.to_agent === "navigator" && 
+               d.task_type === "create_instance" && 
+               d.status === "success"
+        );
+      }
+    },
+    {
+      check: "form execute_login任务已调用（如需要登录）",
+      verify: () => {
+        const accountsConfig = readJson("config/accounts.json");
+        const needsLogin = accountsConfig?.accounts?.length > 0;
+        if (!needsLogin) return true;
+        
+        const delegationLog = readJson("result/delegation_log.json");
+        return delegationLog?.delegations?.some(
+          d => d.to_agent === "form" && 
+               d.task_type === "execute_login" && 
+               d.status === "success"
+        );
+      }
+    },
+    {
+      check: "security init_security任务已调用",
+      verify: () => {
+        const delegationLog = readJson("result/delegation_log.json");
+        return delegationLog?.delegations?.some(
+          d => d.to_agent === "security" && 
+               d.task_type === "init_security" && 
+               d.status === "success"
+        );
+      }
+    },
+    {
+      check: "Coordinator没有直接使用Playwright MCP",
+      verify: () => {
+        const delegationLog = readJson("result/delegation_log.json");
+        const violations = delegationLog?.violations || [];
+        return !violations.some(v => v.tool?.startsWith("mcp__playwright__"));
+      }
+    }
+  ],
+  
+  onViolation: (violations) => {
+    createEvent("DELEGATION_VIOLATION", {
+      priority: "high",
+      payload: {
+        violations: violations,
+        message: "Coordinator违反了委派规则，请检查架构设计"
+      }
+    });
+  }
+};
+```
+
+### 门控1增强版：包含委派验证
+
+```javascript
+const gate1_withDelegation = {
+  name: "初始化完成（含委派验证）",
+  conditions: [
+    // 原有条件...
+    {
+      check: "Chrome实例启动成功",
+      verify: () => {
+        const instances = readJson("result/chrome_instances.json");
+        return instances.length > 0 && instances[0].status === "running";
+      }
+    },
+    // 新增：委派验证
+    ...delegationVerification.verification_checklist
+  ],
+  
+  onPass: () => {
+    updateSessionState("PHASE_1_EXPLORE");
+    logDelegationSuccess();
+    startPhase1Explore();
+  },
+  
+  onFail: (failedConditions) => {
+    // 检查是否为委派违规
+    const delegationViolations = failedConditions.filter(
+      c => c.check.includes("委派") || c.check.includes("Playwright")
+    );
+    
+    if (delegationViolations.length > 0) {
+      createEvent("DELEGATION_VIOLATION", {
+        priority: "critical",
+        payload: { violations: delegationViolations }
+      });
+    }
+    
+    reportInitFailure(failedConditions);
+    pauseSession();
+  }
+};
+```
+
+---
+
+## 📝 委派日志格式
+
+### 文件位置
+`result/delegation_log.json`
+
+### 格式定义
+
+```json
+{
+  "session_id": "session_20260422",
+  "delegations": [
+    {
+      "timestamp": "2026-04-22T10:00:00Z",
+      "from_agent": "webtest",
+      "to_agent": "navigator",
+      "task_type": "create_instance",
+      "description": "创建Chrome实例",
+      "status": "success",
+      "result_summary": "Created Chrome instance on port 9222",
+      "duration_ms": 5432
+    },
+    {
+      "timestamp": "2026-04-22T10:00:10Z",
+      "from_agent": "webtest",
+      "to_agent": "form",
+      "task_type": "execute_login",
+      "description": "执行登录操作",
+      "status": "success",
+      "result_summary": "Login successful for admin_001",
+      "duration_ms": 3210
+    }
+  ],
+  "violations": [
+    {
+      "timestamp": "2026-04-22T09:55:00Z",
+      "agent": "webtest",
+      "tool": "mcp__playwright__browser_navigate",
+      "reason": "Coordinator不应直接使用Playwright MCP",
+      "should_delegate_to": "navigator"
+    }
+  ]
+}
+```
+
+### 记录时机
+
+1. **成功委派**：当Coordinator调用Task工具并收到成功返回时
+2. **委派失败**：当Task调用返回失败时
+3. **违规操作**：当检测到Coordinator直接使用禁止工具时
+
+### 使用方法
+
+Coordinator在调用Task工具后，应记录委派日志：
+
+```javascript
+function logDelegation(toAgent, taskType, description, status, result) {
+  const log = readJson("result/delegation_log.json") || { delegations: [], violations: [] };
+  
+  log.delegations.push({
+    timestamp: new Date().toISOString(),
+    from_agent: "webtest",
+    to_agent: toAgent,
+    task_type: taskType,
+    description: description,
+    status: status,
+    result_summary: result?.summary || "",
+    duration_ms: result?.duration || 0
+  });
+  
+  writeJson("result/delegation_log.json", log);
+}
+
+function logViolation(tool, reason, shouldDelegateTo) {
+  const log = readJson("result/delegation_log.json") || { delegations: [], violations: [] };
+  
+  log.violations.push({
+    timestamp: new Date().toISOString(),
+    agent: "webtest",
+    tool: tool,
+    reason: reason,
+    should_delegate_to: shouldDelegateTo
+  });
+  
+  writeJson("result/delegation_log.json", log);
+}
+```
