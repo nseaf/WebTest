@@ -2,7 +2,7 @@
 
 > AI-Agent Web渗透测试系统 | AI-Agent Web Penetration Testing System
 > 支持场景: Web探索 / 越权测试 / 注入测试 / 流程审批测试
-> 版本: 1.0 | 更新: 2026-04-22
+> 版本: 1.1 | 更新: 2026-04-22
 
 ---
 
@@ -27,7 +27,7 @@
 ```
 
 - **Agent 定义**: `.opencode/agents/` — 包含 webtest (主调度器) 及 6 个专业 Subagent
-- **Skill 知识库**: `.opencode/skills/` — 可复用的方法论模块 (17 个 Skills)
+- **Skill 知识库**: `.opencode/skills/` — 可复用的方法论模块 (24 个 Skills)
 - **数据存储**: `result/` — JSON 文件存储，MongoDB 用于 BurpBridge 数据
 
 ---
@@ -57,6 +57,7 @@
 | mongodb-writer | `.opencode/skills/data/mongodb-writer/` | 实时数据库写入 |
 | progress-tracking | `.opencode/skills/data/progress-tracking/` | 访问跟踪与进度控制 |
 | api-categorization | `.opencode/skills/data/api-categorization/` | API模块划分与分类 |
+| workflow-operation-logging | `.opencode/skills/data/workflow-operation-logging/` | 流程审批操作记录方法论 |
 
 ### Security Skills
 
@@ -66,6 +67,15 @@
 | injection-testing | `.opencode/skills/security/injection-testing/` | 注入测试方法论 |
 | auth-context-sync | `.opencode/skills/security/auth-context-sync/` | 认证上下文同步 |
 | vulnerability-rating | `.opencode/skills/security/vulnerability-rating/` | 漏洞严重性评级 |
+| burpbridge-api-reference | `.opencode/skills/security/burpbridge-api-reference/` | BurpBridge REST API完整参考 |
+| workflow-authorization-testing | `.opencode/skills/security/workflow-authorization-testing/` | 流程审批越权测试方法论 |
+| sensitive-api-detection | `.opencode/skills/security/sensitive-api-detection/` | 敏感API识别规则 |
+
+### Workflow Skills (补充)
+
+| Skill | 路径 | 功能 |
+|-------|------|------|
+| security-error-handling | `.opencode/skills/workflow/security-error-handling/` | Security Agent错误处理 |
 
 ### Browser Skills
 
