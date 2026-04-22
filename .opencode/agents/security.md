@@ -1362,6 +1362,7 @@ Coordinator 以统一的格式下发任务：
 | 任务类型 | 参数 | 说明 | 返回 |
 |----------|------|------|------|
 | `init_security` | target_host | 初始化安全测试 | 初始化结果 |
+| `check_and_test` | target_host, since_timestamp, current_page, wait_seconds | 检查新历史记录并测试敏感API | 进度+漏洞结果 |
 | `test_authorization` | api_endpoint, roles | 执行越权测试 | 测试结果 |
 | `test_injection` | form_selector, payload_type | 执行注入测试 | 测试结果 |
 | `sync_cookies` | role, cookies | 同步认证上下文 | 同步结果 |
@@ -1384,6 +1385,104 @@ Security Agent 自主完成：
 1. 配置自动同步
 2. 验证同步状态
 3. 配置角色认证上下文
+
+#### check_and_test 任务
+
+Coordinator传入参数说明：
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| target_host | string | 目标主机名 |
+| since_timestamp | number | 查询起点时间戳（毫秒），只处理时间戳大于此值的记录 |
+| current_page | number | 分页查询起始页码，从指定页开始查询 |
+| wait_seconds | number | 无新记录时的等待时间（秒），默认10秒 |
+
+Security收到任务后的执行流程：
+
+**Phase 1: 分页查询历史记录**
+
+调用 BurpBridge MCP 的 `list_paginated_http_history` 工具，参数如下：
+- host: Coordinator传入的target_host
+- page: Coordinator传入的current_page
+- page_size: 固定为50
+
+返回结果包含：
+- total: 总记录数
+- page: 当前页码
+- page_size: 每页数量
+- items: 当前页的记录列表，每条记录包含id、url、method、responseStatusCode、timestampMs
+
+**Phase 2: 过滤记录**
+
+对返回的items列表执行过滤：
+
+1. 时间戳过滤：只保留 timestampMs 大于 since_timestamp 的记录
+2. 去重过滤：排除本次执行已分析的ID（Security内部维护analyzed_ids列表）
+3. 过滤后的记录即为待处理的新记录
+
+**Phase 3: 等待阶段（无新记录时）**
+
+如果过滤后的记录数量为0，执行等待策略：
+
+1. 等待 wait_seconds 秒（让浏览器产生新流量）
+2. 调用 `get_auto_sync_status` 检查自动同步状态，获取 synced_count
+3. 如果 synced_count 有增长，说明有新流量产生，重新查询（page=1）
+4. 如果 synced_count 无变化，进入Phase 4
+
+**Phase 4: 手动同步（可选）**
+
+如果等待后仍无新记录，尝试手动同步：
+
+1. 调用 `sync_proxy_history_with_filters` 手动同步Burp代理历史
+2. 同步完成后重新查询（page=1）
+3. 如果仍无新记录，准备退出并返回 no_new_records 状态
+
+**Phase 5: 识别敏感API并执行测试**
+
+对过滤后的每条记录执行：
+
+1. 检查URL路径是否匹配敏感路径模式（如 /api/users/*, /api/admin/*）
+2. 检查响应摘要是否包含敏感字段（如 email, phone, permissions）
+3. 如果是敏感API：
+   - 调用 `get_http_request_detail` 获取完整请求详情
+   - 调用 `replay_http_request_as_role` 用不同角色重放请求
+   - 调用 Task(analyzer) 分析重放结果
+4. 将分析的记录ID添加到 analyzed_ids 列表
+5. 更新 last_processed_timestamp 为当前记录的timestampMs
+
+**Phase 6: 分页继续策略**
+
+处理完当前页后判断是否继续查询：
+
+- 如果当前页有新记录被处理：继续查询下一页（page+1），重复Phase 1-5
+- 如果当前页无新记录但items数量等于page_size：可能还有更多页，继续查询下一页
+- 如果当前页无新记录且items数量小于page_size：已到达末尾，准备退出
+
+**Phase 7: 汇报进度给Coordinator**
+
+退出时必须汇报完整的进度信息：
+
+| 字段 | 说明 |
+|------|------|
+| status | success（处理完成）/ partial（还有更多页）/ no_new_records（无新记录） |
+| since_timestamp | 查询起点时间戳（Coordinator传入值，不变） |
+| current_page | 下次应从第N页开始查询 |
+| last_processed_timestamp | 最新处理的记录时间戳 |
+| analyzed_ids | 本次执行已分析的ID列表 |
+| total_processed | 本次处理记录总数 |
+| total_sensitive_found | 发现敏感API数量 |
+| total_vulnerabilities | 发现漏洞数量 |
+| waited_seconds | 本次等待时间 |
+| manual_sync_attempted | 是否尝试手动同步 |
+| suggested_restart | 建议Coordinator是否重新启动 |
+
+**suggested_restart判断规则**：
+
+| 情况 | suggested_restart值 |
+|------|---------------------|
+| status=partial（还有更多页） | true |
+| status=no_new_records且探索链条仍在运行 | true |
+| status=success且探索已完成 | false |
 
 #### test_authorization 任务
 
@@ -1416,33 +1515,72 @@ Security Agent 自主完成：
 
 所有任务返回统一格式：
 
-```json
-{
-  "status": "success|failed|partial",
-  "report": {
-    "test_type": "authorization|injection",
-    "target": "/api/users/123",
-    "tests_run": 3,
-    "vulnerabilities_found": 1
-  },
-  "vulnerabilities": [
-    {
-      "type": "IDOR",
-      "severity": "high",
-      "description": "Guest用户可访问Admin用户的个人数据",
-      "replay_id": "uuid-xxx"
-    }
-  ],
-  "events_created": [
-    {
-      "event_type": "VULNERABILITY_FOUND",
-      "payload": { ... }
-    }
-  ],
-  "next_suggestions": [
-    "建议测试其他用户ID: /api/users/124"
-  ]
-}
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| status | string | success / partial / no_new_records / failed |
+| report | object | 任务执行报告 |
+| progress | object | 进度信息（check_and_test任务专用） |
+| vulnerabilities | array | 发现的漏洞列表 |
+| events_created | array | 创建的事件列表 |
+| suggested_restart | boolean | 建议Coordinator是否重新启动 |
+
+### check_and_test 返回格式
+
+check_and_test任务的完整返回格式示例：
+
+**成功处理完成（status=success）**：
+
+```
+status: success
+progress:
+  since_timestamp: 1710000000000（查询起点时间戳）
+  current_page: 1（下次从第1页开始，已处理完所有页）
+  last_processed_timestamp: 1710000500000（最新处理的记录时间戳）
+  analyzed_ids: [id1, id2, id3...]（本次已分析ID列表）
+  total_processed: 45（本次处理记录总数）
+  total_sensitive_found: 5（发现敏感API数量）
+  total_vulnerabilities: 2（发现漏洞数量）
+vulnerabilities:
+  - type: IDOR
+    severity: high
+    api_endpoint: /api/users/123
+    replay_id: uuid-xxx
+events_created: []
+suggested_restart: false
+```
+
+**部分完成（status=partial，还有更多页）**：
+
+```
+status: partial
+progress:
+  since_timestamp: 1710000000000
+  current_page: 5（下次从第5页开始查询）
+  last_processed_timestamp: 1710000300000
+  analyzed_ids: [id1, id2, id3...]
+  total_processed: 30
+  total_sensitive_found: 3
+  total_vulnerabilities: 1
+vulnerabilities: [...]
+suggested_restart: true
+```
+
+**无新记录（status=no_new_records）**：
+
+```
+status: no_new_records
+progress:
+  since_timestamp: 1710000000000
+  current_page: 1
+  last_processed_timestamp: null（无新记录处理）
+  analyzed_ids: []
+  total_processed: 0
+  total_sensitive_found: 0
+  total_vulnerabilities: 0
+waited_seconds: 10
+manual_sync_attempted: true
+vulnerabilities: []
+suggested_restart: true（如果探索链条仍在运行）
 ```
 
 ### 初始化结果返回格式

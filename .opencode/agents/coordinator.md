@@ -135,48 +135,60 @@ State: EXPLORATION_RUNNING
               进入迭代N+1
 ```
 
-### Task 调用代码示例
+### Task 调用示例
 
-**并行启动（单消息多发）**:
-```javascript
-// 在一条消息中并行启动 navigator 和 security
-// opencode会同时创建两个独立的subagent session
+**并行启动Navigator和Security**：
 
-Task({
-  "subagent_type": "navigator",
-  "description": "导航到下一页面",
-  "prompt": `
-    任务: navigate
-    参数: { "target_url": "...", "window_id": "win_001" }
-    返回: 导航结果、当前URL
-  `
-})
+在一条消息中同时启动两个Task，opencode会并行执行：
 
-Task({
-  "subagent_type": "security",
-  "description": "检查新发现的敏感API并执行测试",
-  "prompt": `
-    任务: check_and_test
-    参数: { "target_host": "www.example.com", "since_timestamp": ... }
-    返回: 漏洞列表、测试建议
-  `
-})
+**Task(navigator)参数**：
+- subagent_type: navigator
+- description: 导航到下一页面
+- prompt内容：
+  - 任务类型: navigate
+  - 目标URL: 从待访问队列获取
+  - 窗口ID: 从sessions.json获取当前活跃窗口
+  - 返回要求: 导航结果、当前URL
 
-// 两个Task在同一消息中发出，opencode并行执行
-// 等待两者都返回后继续处理
-```
+**Task(security)参数**：
+- subagent_type: security
+- description: 检查新发现的敏感API并执行测试
+- prompt内容：
+  - 任务类型: check_and_test
+  - target_host: 会话配置的目标主机名
+  - since_timestamp: 从security_progress.since_timestamp读取
+  - current_page: 从security_progress.current_page读取
+  - wait_seconds: 配置值（默认10秒）
+  - 返回要求: 进度信息、漏洞列表
 
-**探索链条串行继续**:
-```javascript
-// navigator返回后，串行启动 scout → form
-// scout和form有依赖关系，必须等待前一个完成
+两个Task同时发出后等待返回：
+- Navigator返回 → 继续启动Scout和Form
+- Security返回 → 更新进度、处理漏洞、决定是否重启
 
-Task({
-  "subagent_type": "scout",
-  "description": "分析navigator导航后的页面",
-  "prompt": `
-    任务: analyze_page
-    参数: { "window_id": "win_001" }
+**探索链条串行继续（Navigator返回后）**：
+
+Navigator返回后，依次启动Scout和Form：
+
+**Task(scout)参数**：
+- subagent_type: scout
+- description: 分析Navigator导航后的页面
+- prompt内容：
+  - 任务类型: analyze_page
+  - 窗口ID: 当前活跃窗口
+  - 返回要求: 发现的链接、表单、API端点
+
+等待Scout返回...
+
+**Task(form)参数**：
+- subagent_type: form
+- description: 处理Scout发现的表单
+- prompt内容：
+  - 任务类型: process_form
+  - 表单列表: Scout返回的表单列表
+  - 窗口ID: 当前活跃窗口
+  - 返回要求: 表单处理结果
+
+等待Form返回后进入下一次迭代。
     返回: 发现的链接、表单、API端点
   `
 })
@@ -185,37 +197,28 @@ Task({
 Task({
   "subagent_type": "form",
   "description": "处理scout发现的表单",
-  "prompt": `
-    任务: process_form
-    参数: { "forms": [...], "window_id": "win_001" }
-    返回: 表单处理结果
-  `
-})
-// 等待form返回后进入下一次迭代
-```
+  等待Form返回后进入下一次迭代。
 
 ### 两层并行架构（参考opencode-agents）
 
 当Security发现多个敏感API时，可自主spawn多个analyzer并行分析：
 
-```
-Security Agent
-│ 发现5个敏感API
-│
-│ Task(analyzer) ← 分析API_1
-│ Task(analyzer) ← 分析API_2  
-│ Task(analyzer) ← 分析API_3
-│     ↓ 并行执行（单消息多发）
-│ 汇总所有analyzer结果
-│ → 返回漏洞列表给Coordinator
-```
+**两层并行模式**：
 
-**触发条件**:
+Security Agent处理多个敏感API时：
+- 发现敏感API数量超过3个
+- API分布在不同业务模块
+- Security在一条消息中同时启动多个Task(analyzer)
+- analyzer数量上限为3个（防止资源爆炸）
+- Security汇总所有analyzer返回的漏洞结果
+- 统一上报给Coordinator
+
+**触发条件**：
 - 发现敏感API数量 > 3
 - API分布在不同业务模块
 
-**限制**:
-- analyzer数量上限 = 3（防止资源爆炸）
+**限制**：
+- analyzer数量上限 = 3
 - Security汇总结果后统一上报
 
 ---
@@ -562,24 +565,162 @@ Security Agent 自主完成：
 
 Coordinator 需要维护以下全局状态：
 
-```json
-{
-  "session_id": "session_YYYYMMDD",
-  "target_url": "https://example.com",
-  "status": "running|completed|failed|paused",
-  "phase": "exploration|security_testing|reporting",
-  "statistics": {
-    "pages_visited": 0,
-    "forms_found": 0,
-    "vulnerabilities_found": 0
-  },
-  "config": {
-    "max_depth": 3,
-    "max_pages": 50,
-    "timeout_ms": 30000
-  }
-}
-```
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| session_id | string | 会话ID，格式session_YYYYMMDD |
+| target_url | string | 目标网站URL |
+| status | string | 会话状态：running / completed / failed / paused |
+| phase | string | 当前阶段：exploration / security_testing / reporting |
+| statistics | object | 统计数据 |
+| config | object | 配置参数 |
+| security_progress | object | Security进度信息（新增） |
+
+**statistics结构**：
+
+| 字段 | 说明 |
+|------|------|
+| pages_visited | 已访问页面数量 |
+| forms_found | 发现表单数量 |
+| vulnerabilities_found | 发现漏洞数量 |
+
+**config结构**：
+
+| 字段 | 说明 |
+|------|------|
+| max_depth | 最大探索深度 |
+| max_pages | 最大页面数量 |
+| timeout_ms | 超时时间（毫秒） |
+
+**security_progress结构（新增）**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| since_timestamp | number | 查询起点时间戳（毫秒），只查询大于此时间戳的记录 |
+| current_page | number | 下次启动Security时的起始页码 |
+| total_analyzed_count | number | 累计已分析记录总数 |
+| last_security_run | number | 上次Security执行时间（毫秒） |
+| last_processed_timestamp | number | 最新处理的记录时间戳 |
+
+**security_progress初始化**：
+
+测试会话开始时，security_progress初始化为：
+- since_timestamp: 当前时间戳（会话开始时间）
+- current_page: 1
+- total_analyzed_count: 0
+- last_security_run: null
+- last_processed_timestamp: null
+
+**security_progress更新时机**：
+
+每当Security Agent返回结果后，Coordinator根据返回的progress信息更新：
+
+| Security返回状态 | Coordinator更新操作 |
+|-----------------|-------------------|
+| success | since_timestamp = last_processed_timestamp，current_page = 1 |
+| partial | current_page = Security返回的页码，total_analyzed_count累加 |
+| no_new_records | since_timestamp = last_processed_timestamp（如果有），current_page = 1 |
+
+---
+
+## Security进度协调机制
+
+### 防重复分析原理
+
+Coordinator通过维护since_timestamp和current_page确保Security不会重复分析已处理的记录：
+
+**时间戳过滤机制**：
+
+- Security每次启动时传入since_timestamp参数
+- Security查询历史记录时只处理timestampMs大于since_timestamp的记录
+- Security退出时汇报last_processed_timestamp（本次处理的最新记录时间戳）
+- Coordinator更新since_timestamp = last_processed_timestamp
+- 下次Security启动时自动过滤旧记录
+
+**分页续查机制**：
+
+- Security处理完当前页后判断是否还有更多页
+- 如果返回partial状态，汇报current_page（下次应从第N页开始）
+- Coordinator记录current_page
+- 下次Security启动时从指定页码开始，避免从头重新查询
+
+### Security启动参数传递
+
+Coordinator启动Security时的参数来源：
+
+| 参数 | 来源 | 说明 |
+|------|------|------|
+| target_host | 配置 | 目标主机名，从会话配置获取 |
+| since_timestamp | security_progress.since_timestamp | 从全局状态读取 |
+| current_page | security_progress.current_page | 从全局状态读取 |
+| wait_seconds | 配置（默认10） | 无新记录时的等待时间 |
+
+### Security返回后处理流程
+
+Security返回后，Coordinator执行以下处理步骤：
+
+**步骤1：读取Security返回的进度信息**
+
+从Security返回结果中提取：
+- status（success / partial / no_new_records）
+- progress.since_timestamp
+- progress.current_page
+- progress.last_processed_timestamp
+- progress.analyzed_ids
+- progress.total_processed
+- suggested_restart
+
+**步骤2：更新全局进度状态**
+
+根据status更新security_progress：
+
+- success状态：since_timestamp = last_processed_timestamp，current_page = 1，total_analyzed_count累加
+- partial状态：current_page = Security返回的页码，total_analyzed_count累加
+- no_new_records状态：如果last_processed_timestamp有值则更新since_timestamp，current_page = 1
+
+**步骤3：处理漏洞结果**
+
+如果vulnerabilities列表不为空：
+- 将漏洞添加到vulnerabilities.json
+- 更新statistics.vulnerabilities_found
+- 创建VULNERABILITY_FOUND事件
+
+**步骤4：决定是否重新启动Security**
+
+根据suggested_restart和探索状态决定：
+
+| suggested_restart | 探索状态 | 决策 |
+|-------------------|---------|------|
+| true | 探索仍在运行 | 下次迭代重新启动Security |
+| true | 探索已完成但有未测试API | 启动新一轮Security |
+| false | 探索已完成且所有API已测试 | 进入REPORT阶段 |
+
+### 重新启动Security的时机
+
+Coordinator在主循环中决定是否重新启动Security：
+
+**情况1：探索仍在运行**
+
+- Security返回no_new_records但探索链条仍在产生流量
+- suggested_restart = true
+- 下次迭代并行启动 navigator + security（使用更新后的进度）
+
+**情况2：还有更多页待处理**
+
+- Security返回partial状态
+- suggested_restart = true
+- 下次迭代启动Security继续处理剩余页面
+
+**情况3：探索已完成但仍有未测试敏感API**
+
+- 检查progress collection中是否有pending状态的敏感API
+- 如果有，启动Security专门测试这些API
+
+**情况4：所有测试完成**
+
+- Security返回success
+- suggested_restart = false
+- 探索已完成
+- 进入REPORT阶段
 
 ---
 
