@@ -2,6 +2,38 @@
 
 本文档定义了 Agent 间通信使用的所有状态文件格式、读写时机和注意事项。
 
+---
+
+## 数据存储架构
+
+### MongoDB Collections（实时写入）
+
+使用BurpBridge现有MongoDB，扩展以下collections：
+
+| Collection | 用途 | 写入时机 | 写入Agent |
+|------------|------|---------|-----------|
+| test_sessions | 测试会话 | Coordinator初始化 | Coordinator |
+| findings | 漏洞发现 | Security发现立即写入 | Security |
+| apis | API发现 | Scout发现立即写入 | Scout |
+| pages | 页面发现 | Scout分析后写入 | Scout |
+| events | 事件队列 | 任意Agent创建事件 | 所有Agent |
+| progress | 测试进度 | 每个Agent完成任务后更新 | Scout/Security |
+
+**核心原则**：每发现一个数据立即写入MongoDB，不等Agent完成，防止数据丢失。
+
+详细Schema定义见：`skills/data/mongodb-writer/SKILL.md`
+
+### JSON文件（保留）
+
+以下数据仍使用JSON文件存储（便于查看和调试）：
+
+| 文件 | 路径 | 用途 |
+|------|------|------|
+| 会话状态 | `result/sessions.json` | 登录状态、Cookie信息、CDP连接 |
+| Chrome实例 | `result/chrome_instances.json` | Chrome实例注册表、PID、端口 |
+
+---
+
 ## 文件路径总览
 
 | 文件 | 路径 | 用途 | 模板位置 |

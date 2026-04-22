@@ -1,0 +1,178 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["AGENTS.md"],
+  "watcher": {
+    "ignore": [
+      "**/node_modules/**",
+      "**/vendor/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/.git/**",
+      "**/.tmp/**",
+      "**/result/**"
+    ]
+  },
+  "default_agent": "webtest",
+  "agent": {
+    "webtest": {
+      "description": "AI-Agent Web penetration testing orchestrator. Coordinates multi-agent exploration, security testing (IDOR, injection), and vulnerability analysis for authorized web applications.",
+      "mode": "primary",
+      "temperature": 0.2,
+      "prompt": "{file:.opencode/agents/coordinator.md}",
+      "tools": {
+        "write": true,
+        "edit": true,
+        "bash": true,
+        "skill": true
+      },
+      "permission": {
+        "task": {
+          "navigator": "allow",
+          "scout": "allow",
+          "form": "allow",
+          "security": "allow",
+          "analyzer": "allow",
+          "account_parser": "allow",
+          "*": "deny"
+        },
+        "bash": {
+          "*": "ask",
+          "browser-use *": "allow",
+          "docker *": "allow",
+          "curl *": "allow"
+        },
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "navigator": {
+      "description": "Browser navigation agent: Chrome instance management via browser-use CLI, page navigation, session state monitoring, URL tracking, multi-window management.",
+      "mode": "subagent",
+      "temperature": 0.1,
+      "prompt": "{file:.opencode/agents/navigator.md}",
+      "tools": {
+        "write": true,
+        "edit": true,
+        "bash": true,
+        "skill": true
+      },
+      "permission": {
+        "bash": {
+          "*": "ask",
+          "browser-use *": "allow"
+        },
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "scout": {
+      "description": "Page analysis agent: DOM structure analysis, link discovery, form detection, API endpoint identification, network request monitoring.",
+      "mode": "subagent",
+      "temperature": 0.1,
+      "prompt": "{file:.opencode/agents/scout.md}",
+      "tools": {
+        "write": true,
+        "edit": false,
+        "bash": true,
+        "skill": true
+      },
+      "permission": {
+        "bash": {
+          "*": "ask"
+        },
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "form": {
+      "description": "Form handling agent: form recognition, intelligent filling, login execution, cookie synchronization, captcha detection.",
+      "mode": "subagent",
+      "temperature": 0.1,
+      "prompt": "{file:.opencode/agents/form.md}",
+      "tools": {
+        "write": true,
+        "edit": true,
+        "bash": true,
+        "skill": true
+      },
+      "permission": {
+        "bash": {
+          "*": "ask",
+          "browser-use *": "allow"
+        },
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "security": {
+      "description": "Security testing agent: IDOR testing via request replay, injection testing, authentication context management, BurpBridge MCP integration.",
+      "mode": "subagent",
+      "temperature": 0.1,
+      "prompt": "{file:.opencode/agents/security.md}",
+      "tools": {
+        "write": true,
+        "edit": false,
+        "bash": true,
+        "skill": true
+      },
+      "permission": {
+        "bash": {
+          "*": "ask",
+          "docker *": "allow",
+          "curl *": "allow"
+        },
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "analyzer": {
+      "description": "Result analysis agent: replay response analysis, vulnerability judgment, severity rating, exploration suggestions generation.",
+      "mode": "subagent",
+      "temperature": 0.15,
+      "prompt": "{file:.opencode/agents/analyzer.md}",
+      "tools": {
+        "write": true,
+        "edit": false,
+        "bash": false,
+        "skill": true
+      },
+      "permission": {
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "account_parser": {
+      "description": "Account document parser: multi-format account parsing (Excel, CSV, JSON), permission matrix extraction, accounts.json generation.",
+      "mode": "subagent",
+      "temperature": 0.1,
+      "prompt": "{file:.opencode/agents/account_parser.md}",
+      "tools": {
+        "write": true,
+        "edit": true,
+        "bash": true,
+        "skill": true
+      },
+      "permission": {
+        "bash": {
+          "*": "ask"
+        },
+        "skill": {
+          "*": "allow"
+        }
+      }
+    }
+  },
+  "permission": {
+    "edit": "ask",
+    "bash": "ask",
+    "skill": {
+      "*": "allow"
+    }
+  }
+}
