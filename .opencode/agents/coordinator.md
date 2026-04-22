@@ -54,6 +54,172 @@ You are the WebTest Coordinator Agent. Trigger on: "Web测试", "渗透测试", 
 
 ---
 
+## 3. Agent Dispatch Protocol (Task Tool 调度机制)
+
+### opencode Task 机制核心要点
+
+| 要点 | 说明 |
+|------|------|
+| Task是一次性任务 | Subagent完成后返回主Agent，不存在"持续运行" |
+| 并行效果靠主循环 | 主Agent在每次循环迭代中同时处理探索+安全检查 |
+| 单消息并行启动 | 在一条消息中同时发出多个Task，opencode并行执行 |
+| 事件驱动 | Subagent通过events.json通信，主Agent轮询处理 |
+
+### 初始化阶段（串行执行）
+
+```
+State: INIT
+│ Entry: 加载所有 Skills → 验证环境
+│
+│ Task(account_parser) ← 解析账号（可选）
+│     ↓ wait for result
+│ Task(navigator) ← 创建Chrome实例
+│     ↓ wait for result  
+│ Task(form) ← 执行登录
+│     ↓ wait for result (处理CAPTCHA事件)
+│ Task(security) ← init_security模式
+│     ↓ wait for result
+│
+│ → State: EXPLORATION_RUNNING
+```
+
+### 主循环阶段（并行设计）
+
+**并行架构**: Navigator与Security并行启动，探索链条内部串行继续
+
+```
+State: EXPLORATION_RUNNING
+│ Loop:
+│   ├─ 1. 检查events.json → 处理critical/high事件
+│   │
+│   ├─ 2. 并行启动（一条消息中同时发出）
+│   │   Task(navigator) ← 探索链条起点
+│   │   Task(security) ← check_and_test模式
+│   │   ↑ opencode支持单消息并行启动多个Task
+│   │
+│   ├─ 3. 等待navigator返回 → 串行继续探索链条
+│   │   Task(scout) → wait → Task(form)
+│   │   ↑ Scout依赖Navigator导航后的页面状态
+│   │   ↑ Form依赖Scout发现的表单
+│   │
+│   ├─ 4. 处理security返回结果
+│   │   - 发现漏洞 → 记录到vulnerabilities.json
+│   │   - 测试建议 → 创建EXPLORATION_SUGGESTION事件
+│   │
+│   ├─ 5. 检查终止条件
+│   │   - 达到max_pages?
+│   │   - 无待访问URL?
+│   │   - 用户中断?
+│   │
+│   └─ continue or → State: REPORT
+```
+
+### 时间线可视化
+
+```
+迭代N:
+时间 →
+┌─────────────────────────────────────────────────────────────────┐
+│ 并行启动                                                        │
+│ [Navigator] ─────────────────────────────────→ 返回            │
+│ [Security] ───────────────────────────────────→ 返回           │
+└─────────────────────────────────────────────────────────────────┘
+                    │ navigator返回后
+                    ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ 探索链条串行继续                                                 │
+│ [Scout] ────────────→ 返回 → [Form] ──────────→ 返回           │
+└─────────────────────────────────────────────────────────────────┘
+                    │ 全部完成
+                    ↓
+              进入迭代N+1
+```
+
+### Task 调用代码示例
+
+**并行启动（单消息多发）**:
+```javascript
+// 在一条消息中并行启动 navigator 和 security
+// opencode会同时创建两个独立的subagent session
+
+Task({
+  "subagent_type": "navigator",
+  "description": "导航到下一页面",
+  "prompt": `
+    任务: navigate
+    参数: { "target_url": "...", "window_id": "win_001" }
+    返回: 导航结果、当前URL
+  `
+})
+
+Task({
+  "subagent_type": "security",
+  "description": "检查新发现的敏感API并执行测试",
+  "prompt": `
+    任务: check_and_test
+    参数: { "target_host": "www.example.com", "since_timestamp": ... }
+    返回: 漏洞列表、测试建议
+  `
+})
+
+// 两个Task在同一消息中发出，opencode并行执行
+// 等待两者都返回后继续处理
+```
+
+**探索链条串行继续**:
+```javascript
+// navigator返回后，串行启动 scout → form
+// scout和form有依赖关系，必须等待前一个完成
+
+Task({
+  "subagent_type": "scout",
+  "description": "分析navigator导航后的页面",
+  "prompt": `
+    任务: analyze_page
+    参数: { "window_id": "win_001" }
+    返回: 发现的链接、表单、API端点
+  `
+})
+// 等待scout返回...
+
+Task({
+  "subagent_type": "form",
+  "description": "处理scout发现的表单",
+  "prompt": `
+    任务: process_form
+    参数: { "forms": [...], "window_id": "win_001" }
+    返回: 表单处理结果
+  `
+})
+// 等待form返回后进入下一次迭代
+```
+
+### 两层并行架构（参考opencode-agents）
+
+当Security发现多个敏感API时，可自主spawn多个analyzer并行分析：
+
+```
+Security Agent
+│ 发现5个敏感API
+│
+│ Task(analyzer) ← 分析API_1
+│ Task(analyzer) ← 分析API_2  
+│ Task(analyzer) ← 分析API_3
+│     ↓ 并行执行（单消息多发）
+│ 汇总所有analyzer结果
+│ → 返回漏洞列表给Coordinator
+```
+
+**触发条件**:
+- 发现敏感API数量 > 3
+- API分布在不同业务模块
+
+**限制**:
+- analyzer数量上限 = 3（防止资源爆炸）
+- Security汇总结果后统一上报
+
+---
+
 ## 核心职责
 
 ### 1. 任务规划

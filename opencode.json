@@ -120,6 +120,9 @@
         "skill": true
       },
       "permission": {
+        "task": {
+          "analyzer": "allow"
+        },
         "bash": {
           "*": "ask",
           "docker *": "allow",

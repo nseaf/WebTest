@@ -698,6 +698,51 @@ db.replays.findOne({ replayId: "uuid-xxx" })
 - Analyzer Agent 将自行使用 MongoDB MCP 查询重放结果
 - 接收漏洞判定和建议
 
+#### Analyzer Task 调用方式
+
+Security Agent 通过 **Task(analyzer)** 内部调用：
+
+```javascript
+Task({
+  "subagent_type": "analyzer",
+  "description": "分析重放结果判断漏洞",
+  "prompt": `
+    任务: analyze_replay
+    参数: {
+      "replay_id": "uuid-xxx",
+      "context": {
+        "node_name": "提交终止",
+        "role": "guest",
+        "expected_permission": false
+      }
+    }
+    必须加载Skills: anti-hallucination, vulnerability-rating
+    输出格式: Agent Contract标准格式
+  `
+})
+```
+
+#### 两层并行模式（参考opencode-agents）
+
+当发现多个敏感API时，Security可spawn多个analyzer并行分析：
+
+```
+触发条件:
+- 敏感API数量 > 3
+- API分布在不同业务模块
+
+限制:
+- analyzer上限 = 3（防止资源爆炸）
+- 结果由Security汇总后上报Coordinator
+
+示例: 单消息并发启动多个analyzer
+Task(analyzer) ← 分析API_1
+Task(analyzer) ← 分析API_2
+Task(analyzer) ← 分析API_3
+  ↓ 并行执行
+汇总所有analyzer返回的漏洞结果
+```
+
 ### 向 Coordinator Agent 报告
 - 发现的漏洞（VULNERABILITY_FOUND 事件）
 - 测试建议（EXPLORATION_SUGGESTION 事件）
