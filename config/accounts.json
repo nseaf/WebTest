@@ -1,61 +1,48 @@
 {
   "$schema": "accounts_schema",
-  "description": "测试账号配置文件 - 主数据源（静态配置）",
-  "note": "此文件存储账号基础信息，用于 Agent 登录决策和角色识别。动态认证信息（Cookie/Token）存储在 result/sessions.json。chrome_config 字段预定义每个账号的 Chrome 实例配置。",
+  "description": "华为教育平台测试账号 - 用户个人中心越权测试",
+  "target_site": "https://edu.hicomputing.huawei.com/",
+  "test_focus": "用户个人中心 - 横向越权测试",
   "accounts": [
-    {
-      "id": "admin_001",
-      "role": "admin",
-      "description": "管理员账号，具有完整权限",
-      "credentials": {
-        "username": "admin@example.com",
-        "password": "encrypted:base64_encoded_placeholder"
-      },
-      "capabilities": ["read", "write", "delete", "admin_panel"],
-      "chrome_config": {
-        "cdp_port": 9222,
-        "user_data_dir": "C:\\temp\\chrome-admin-001",
-        "session_name": "admin_001"
-      }
-    },
     {
       "id": "user_001",
       "role": "user",
-      "description": "普通用户账号，具有基本读写权限",
+      "description": "普通用户账号1 - 用于越权测试基线",
       "credentials": {
-        "username": "user@example.com",
-        "password": "encrypted:base64_encoded_placeholder"
+        "username": "13114529275",
+        "password": "APTX4869."
       },
-      "capabilities": ["read", "write"],
+      "capabilities": ["read", "write_own_profile"],
       "chrome_config": {
-        "cdp_port": 9223,
+        "cdp_port": 9222,
         "user_data_dir": "C:\\temp\\chrome-user-001",
         "session_name": "user_001"
       }
     },
     {
-      "id": "guest_001",
-      "role": "guest",
-      "description": "访客账号，无登录凭据，用于测试未授权访问",
+      "id": "user_002",
+      "role": "user",
+      "description": "普通用户账号2 - 用于横向越权测试目标",
       "credentials": {
-        "username": null,
-        "password": null
+        "username": "15994783265",
+        "password": "APTX4869."
       },
-      "capabilities": ["read"],
+      "capabilities": ["read", "write_own_profile"],
       "chrome_config": {
-        "cdp_port": 9224,
-        "user_data_dir": "C:\\temp\\chrome-guest-001",
-        "session_name": "guest_001"
+        "cdp_port": 9223,
+        "user_data_dir": "C:\\temp\\chrome-user-002",
+        "session_name": "user_002"
       }
     }
   ],
   "login_config": {
-    "default_login_url": "https://example.com/login",
-    "username_selector": "#username",
-    "password_selector": "#password",
-    "submit_selector": "#login-btn",
-    "success_indicator": ".user-profile",
-    "failure_indicator": ".error-message"
+    "default_login_url": "https://edu.hicomputing.huawei.com/",
+    "username_selector": null,
+    "password_selector": null,
+    "submit_selector": null,
+    "success_indicator": null,
+    "failure_indicator": null,
+    "note": "登录表单选择器需要在首次访问页面后动态识别"
   },
   "session_config": {
     "timeout_seconds": 1800,
@@ -84,9 +71,28 @@
     "logged_in": [".user-profile", ".logout-btn", "[data-user-id]", ".user-avatar", ".account-menu"],
     "logged_out": [".login-btn", ".signin-link", "#login-form", ".register-link"]
   },
+  "idor_test_config": {
+    "test_type": "horizontal_idor",
+    "description": "普通用户之间不可横向越权查看/修改个人信息",
+    "test_scenarios": [
+      {
+        "scenario_id": "idor_001",
+        "description": "user_001尝试访问user_002的个人中心",
+        "attacker_account": "user_001",
+        "target_account": "user_002",
+        "expected_result": "拒绝访问或返回自己的数据"
+      },
+      {
+        "scenario_id": "idor_002",
+        "description": "user_002尝试访问user_001的个人中心",
+        "attacker_account": "user_002",
+        "target_account": "user_001",
+        "expected_result": "拒绝访问或返回自己的数据"
+      }
+    ]
+  },
   "notes": {
-    "password_storage": "当前使用明文存储密码（base64编码占位符）。生产环境应使用环境变量或加密存储。",
-    "auth_context_sync": "登录成功后，Cookie/Token 会自动同步到 result/sessions.json 和 BurpBridge",
-    "role_testing": "配置至少两种角色以支持越权测试（IDOR）"
+    "test_focus": "重点测试用户个人中心的API是否存在IDOR漏洞",
+    "permission_rule": "普通用户之间不可横向越权查看/修改个人信息"
   }
 }

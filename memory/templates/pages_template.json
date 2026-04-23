@@ -1,0 +1,34 @@
+{
+  "$schema": "pages_schema",
+  "description": "发现的页面记录模板",
+  
+  "page_template": {
+    "page_id": "page_XXX",
+    "url": "",
+    "title": "",
+    "type": "home|login|list|detail|profile|settings|admin|other",
+    "apis_found": [],
+    "links_count": 0,
+    "forms_found": [],
+    "visited_at": "ISO8601",
+    "depth": 0,
+    "parent_page": null
+  },
+  
+  "page_types": {
+    "home": "首页，包含导航菜单",
+    "login": "登录页面，包含认证表单",
+    "list": "数据列表页面",
+    "detail": "详情页面，URL含ID参数",
+    "profile": "用户信息页面",
+    "settings": "设置页面",
+    "admin": "管理功能页面",
+    "other": "其他页面"
+  },
+  
+  "_usage": {
+    "load_method": "Read('memory/templates/pages_template.json')",
+    "mongodb_write": "webtest.pages collection",
+    "realtime_write": "每访问一个页面立即写入"
+  }
+}

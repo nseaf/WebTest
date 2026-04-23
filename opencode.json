@@ -15,7 +15,7 @@
   "default_agent": "webtest",
   "agent": {
     "webtest": {
-      "description": "AI-Agent Web penetration testing orchestrator. Coordinates multi-agent exploration, security testing (IDOR, injection), and vulnerability analysis for authorized web applications.",
+      "description": "WebTest Coordinator: Web渗透测试主控制器，通过@方式调用子Agent，串行执行测试流程。",
       "mode": "primary",
       "temperature": 0.2,
       "prompt": "{file:.opencode/agents/coordinator.md}",
@@ -28,7 +28,6 @@
       "permission": {
         "task": {
           "navigator": "allow",
-          "scout": "allow",
           "form": "allow",
           "security": "allow",
           "analyzer": "allow",
@@ -47,7 +46,7 @@
       }
     },
     "navigator": {
-      "description": "Browser navigation agent: Chrome instance management via browser-use CLI, page navigation, session state monitoring, URL tracking, multi-window management.",
+      "description": "Navigator Agent: Chrome管理、页面导航、页面分析、API发现、探索进度汇报。合并原Scout功能。",
       "mode": "subagent",
       "temperature": 0.1,
       "prompt": "{file:.opencode/agents/navigator.md}",
@@ -67,28 +66,8 @@
         }
       }
     },
-    "scout": {
-      "description": "Page analysis agent: DOM structure analysis, link discovery, form detection, API endpoint identification, network request monitoring.",
-      "mode": "subagent",
-      "temperature": 0.1,
-      "prompt": "{file:.opencode/agents/scout.md}",
-      "tools": {
-        "write": true,
-        "edit": false,
-        "bash": true,
-        "skill": true
-      },
-      "permission": {
-        "bash": {
-          "*": "ask"
-        },
-        "skill": {
-          "*": "allow"
-        }
-      }
-    },
     "form": {
-      "description": "Form handling agent: form recognition, intelligent filling, login execution, cookie synchronization, captcha detection.",
+      "description": "Form Agent: 表单处理、登录执行、Cookie同步、验证码检测。",
       "mode": "subagent",
       "temperature": 0.1,
       "prompt": "{file:.opencode/agents/form.md}",
@@ -109,7 +88,7 @@
       }
     },
     "security": {
-      "description": "Security testing agent: IDOR testing via request replay, injection testing, authentication context management, BurpBridge MCP integration.",
+      "description": "Security Agent: IDOR测试、注入测试、历史记录分析、BurpBridge集成。",
       "mode": "subagent",
       "temperature": 0.1,
       "prompt": "{file:.opencode/agents/security.md}",
@@ -134,7 +113,7 @@
       }
     },
     "analyzer": {
-      "description": "Result analysis agent: replay response analysis, vulnerability judgment, severity rating, exploration suggestions generation.",
+      "description": "Analyzer Agent: 重放结果分析、漏洞判定、严重性评级、测试建议生成。",
       "mode": "subagent",
       "temperature": 0.15,
       "prompt": "{file:.opencode/agents/analyzer.md}",
@@ -151,7 +130,7 @@
       }
     },
     "account_parser": {
-      "description": "Account document parser: multi-format account parsing (Excel, CSV, JSON), permission matrix extraction, accounts.json generation.",
+      "description": "Account Parser: 账号文档解析、权限矩阵提取、accounts.json生成。",
       "mode": "subagent",
       "temperature": 0.1,
       "prompt": "{file:.opencode/agents/account_parser.md}",

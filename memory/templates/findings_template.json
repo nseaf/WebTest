@@ -1,0 +1,50 @@
+{
+  "$schema": "findings_schema",
+  "description": "漏洞发现记录模板",
+  
+  "finding_template": {
+    "finding_id": "finding_XXX",
+    "session_id": "",
+    "vuln_type": "IDOR|XSS|SQLI|CSRF|INFO_LEAK|AUTH_BYPASS",
+    "severity": "Critical|High|Medium|Low",
+    "confidence": 0.0,
+    "endpoint": "",
+    "method": "GET|POST|PUT|DELETE|PATCH",
+    "tested_role": "",
+    "result": {
+      "original_status": 0,
+      "replayed_status": 0,
+      "sensitive_data_exposed": [],
+      "response_similarity": 0.0
+    },
+    "history_entry_id": "",
+    "replay_id": "",
+    "discovered_at": "ISO8601",
+    "analyzed_at": "ISO8601",
+    "description": "",
+    "evidence": "",
+    "remediation": ""
+  },
+  
+  "severity_definitions": {
+    "Critical": "可导致完全系统控制或敏感数据大规模泄露",
+    "High": "可导致权限提升或敏感数据泄露",
+    "Medium": "可导致有限的数据泄露或功能滥用",
+    "Low": "信息泄露，无直接安全影响"
+  },
+  
+  "vuln_types": {
+    "IDOR": "不安全的直接对象引用",
+    "XSS": "跨站脚本攻击",
+    "SQLI": "SQL注入",
+    "CSRF": "跨站请求伪造",
+    "INFO_LEAK": "信息泄露",
+    "AUTH_BYPASS": "认证绕过"
+  },
+  
+  "_usage": {
+    "load_method": "Read('memory/templates/findings_template.json')",
+    "mongodb_write": "webtest.findings collection",
+    "realtime_write": "每发现一个漏洞立即写入"
+  }
+}

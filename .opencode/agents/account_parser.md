@@ -19,16 +19,44 @@ permission:
 
 ## 2. Skill Loading Protocol
 
+### ⚠️ 优先加载 excel-merged-cell-handler
+
+**重要**: 处理Excel文档时必须优先加载 excel-merged-cell-handler skill，该Skill专门处理合并单元格情况，确保数据正确解析。
+
 ```yaml
-加载顺序:
+加载顺序（必须严格按顺序）:
 1. anti-hallucination: skill({ name: "anti-hallucination" })
 2. agent-contract: skill({ name: "agent-contract" })
-3. excel-merged-cell-handler: skill({ name: "excel-merged-cell-handler" })
+3. excel-merged-cell-handler: skill({ name: "excel-merged-cell-handler" })  ← 优先加载！
 4. permission-matrix-parser: skill({ name: "permission-matrix-parser" })
 
 加载规则:
 1. 尝试: skill({ name: "{skill-name}" })
 2. 若失败: Read(".opencode/skills/data/{skill-name}/SKILL.md")
+3. excel-merged-cell-handler 必须在 permission-matrix-parser 之前加载
+```
+
+### 技术选型：优先使用 openpyxl
+
+**重要**: 解析Excel时必须优先使用 openpyxl 库，而非 pandas。
+
+```yaml
+技术选型原因:
+  openpyxl 优势:
+    - 直接处理.xlsx格式，无需额外依赖
+    - 支持合并单元格检测和填充
+    - 可以获取单元格实际值而非显示值
+    - 更轻量，安装简单: pip install openpyxl
+  
+  pandas 问题:
+    - 合并单元格默认显示为NaN
+    - 需要额外处理合并单元格逻辑
+    - 依赖较多，可能安装失败
+
+优先级:
+  1. openpyxl (推荐，优先使用)
+  2. xlrd (仅.xls格式)
+  3. pandas (仅在其他库不可用时)
 ```
 
 ---
@@ -37,12 +65,25 @@ permission:
 
 ### 多格式文档解析
 
-| 格式 | 扩展名 | 解析方法 |
-|------|--------|----------|
-| Excel | `.xlsx`, `.xls` | 调用permission-matrix-parser |
-| CSV | `.csv` | 按分隔符解析 |
-| JSON | `.json` | 直接解析 |
-| Markdown表格 | `.md` | 提取表格数据 |
+### ⚠️ Excel解析流程（重要）
+
+```yaml
+Excel解析必须遵循以下流程:
+  1. 加载 excel-merged-cell-handler skill
+  2. 使用 openpyxl 打开文件
+  3. 检测合并单元格区域
+  4. 填充合并单元格（将值填充到所有子单元格）
+  5. 提取数据并验证
+  6. 调用 permission-matrix-parser 处理权限矩阵
+```
+
+| 格式 | 扩展名 | 解析方法 | 优先库 |
+|------|--------|----------|--------|
+| Excel | `.xlsx` | openpyxl + excel-merged-cell-handler | **openpyxl** |
+| Excel | `.xls` | xlrd (旧格式) | xlrd |
+| CSV | `.csv` | 按分隔符解析 | 内置 |
+| JSON | `.json` | 直接解析 | 内置 |
+| Markdown表格 | `.md` | 提取表格数据 | 内置 |
 
 ### 字段别名词典
 

@@ -1,0 +1,104 @@
+{
+  "$schema": "navigator_config_schema",
+  "description": "Navigator Agent 配置参数模板",
+  
+  "navigator_config": {
+    "navigation_timeout_ms": 30000,
+    
+    "tool_priority": {
+      "primary": "browser-use CLI",
+      "fallback": "Playwright MCP",
+      "fallback_condition": "browser-use不可用时",
+      "fallback_report_required": true
+    },
+    
+    "login_detection": {
+      "enabled": true,
+      "check_on_first_page": true,
+      "prioritize_login_entry": true,
+      "logged_in_indicators": [
+        ".user-profile",
+        ".logout-btn",
+        "[data-user-id]",
+        ".user-avatar",
+        ".account-menu"
+      ],
+      "logged_out_indicators": [
+        ".login-btn",
+        ".signin-link",
+        "#login-form",
+        ".register-link"
+      ],
+      "login_entry_patterns": [
+        "a[href*='login']",
+        "a[href*='signin']",
+        "a[href*='auth']",
+        "button[contains(text,'登录')]",
+        "a[contains(text,'登录')]"
+      ]
+    },
+    
+    "sensitivity_detection": {
+      "high_risk_patterns": [
+        "url_contains_id_param",
+        "response_has_sensitive_fields",
+        "permission_related_function"
+      ],
+      "idor_candidate_patterns": [
+        "/{id}",
+        "/{userId}",
+        "/{accountId}",
+        "?id=",
+        "?userId="
+      ],
+      "sensitive_fields": [
+        "email",
+        "phone",
+        "address",
+        "password",
+        "token",
+        "session",
+        "permission",
+        "role"
+      ]
+    },
+    
+    "skip_patterns": [
+      "/logout",
+      "/signout",
+      ".pdf$",
+      ".zip$",
+      "mailto:",
+      "tel:"
+    ],
+    
+    "captcha_selectors": [
+      "iframe[src*='captcha']",
+      ".captcha-container",
+      "#captcha",
+      "[class*='captcha']",
+      "#geetest",
+      ".geetest",
+      "div.g-recaptcha",
+      "div.h-captcha"
+    ]
+  },
+  
+  "exploration_strategy": {
+    "breadth_mode": {
+      "description": "广度探索 - 主Agent未指明测试重点",
+      "priority_order": ["login_entry", "sensitive_function", "data_operation", "other"],
+      "exit_criteria": "基于信息丰富度，不固定数值"
+    },
+    "depth_mode": {
+      "description": "深度探索 - 主Agent指定测试重点",
+      "focus_area": "test_focus参数指定",
+      "exit_criteria": "指定功能区域完整探索"
+    }
+  },
+  
+  "_usage": {
+    "load_method": "Read('memory/templates/navigator_config_template.json')",
+    "note": "根据实际需求调整配置值，不直接在Agent文档中写完整配置"
+  }
+}
