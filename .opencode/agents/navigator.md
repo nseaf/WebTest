@@ -39,7 +39,7 @@ You are the Navigator Agent. Trigger on: Coordinator dispatch, @navigator call.
   browser-use CLI:
     - 用于: 所有浏览器操作（导航、点击、截图、状态获取）
     - 命令: browser-use open, browser-use click, browser-use state 等
-    - 连接: browser-use connect --cdp-url http://localhost:9222
+    - 连接: 必须通过CDP连接 --cdp-url http://localhost:9222
     - 状态: 必须使用，优先级最高
     
   Playwright MCP:
@@ -57,6 +57,40 @@ You are the Navigator Agent. Trigger on: Coordinator dispatch, @navigator call.
 
 **违规后果**: 使用禁止工具会导致测试流程不一致，数据无法正确同步到BurpBridge。
 
+### ⚠️ 关键工作流：Chrome创建 → CDP连接（必须按此顺序）
+
+**browser-use无法配置代理，必须通过Chrome启动参数设置代理。**
+
+```
+Step 1: 创建Chrome实例（配置代理）
+        ↓
+        Chrome --proxy-server=http://127.0.0.1:8080
+               --remote-debugging-port=9222
+               --user-data-dir=/tmp/chrome-{session}
+        ↓
+Step 2: browser-use通过CDP连接
+        ↓
+        browser-use --session {name} --cdp-url http://localhost:9222 open {url}
+        ↓
+Step 3: 执行浏览器操作
+        browser-use state, click, type, screenshot 等
+```
+
+**常见错误**：
+```bash
+# ❌ 错误：不通过CDP连接，代理不生效
+browser-use open https://example.com
+
+# ✅ 正确：先创建Chrome实例，再通过CDP连接
+# Step 1: 创建带代理的Chrome
+Chrome --proxy-server=http://127.0.0.1:8080 --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-test
+
+# Step 2: browser-use通过CDP连接
+browser-use --cdp-url http://localhost:9222 open https://example.com
+```
+
+**详见**: `shared-browser-state` Skill（必须加载）
+
 ---
 
 ## 2. Skill Loading Protocol
@@ -73,7 +107,7 @@ You are the Navigator Agent. Trigger on: Coordinator dispatch, @navigator call.
 ```yaml
 加载顺序：
 1. anti-hallucination: skill({ name: "anti-hallucination" })
-2. shared-browser-state: skill({ name: "shared-browser-state" })
+2. shared-browser-state: skill({ name: "shared-browser-state" })  # 关键：Chrome创建→CDP连接工作流
 3. page-navigation: skill({ name: "page-navigation" })
 4. page-analysis: skill({ name: "page-analysis" })
 5. api-discovery: skill({ name: "api-discovery" })
@@ -93,35 +127,48 @@ You are the Navigator Agent. Trigger on: Coordinator dispatch, @navigator call.
 创建和管理Chrome实例，支持多账号测试：
 
 ```yaml
-实例创建:
-  参数:
-    - account_id: 账号标识
-    - cdp_port: Chrome调试端口（9222-9322）
-    - user_data_dir: 用户数据目录
-    - proxy: Burp代理地址（127.0.0.1:8080）
+实例创建（关键：必须按此顺序）:
+  Step 1: 启动Chrome（带代理和CDP端口）
+    Windows:
+      $chromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+      Start-Process $chromePath -ArgumentList @(
+        "--proxy-server=http://127.0.0.1:8080",
+        "--remote-debugging-port={cdp_port}",
+        "--user-data-dir={user_data_dir}"
+      )
+    macOS:
+      /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+        --proxy-server=http://127.0.0.1:8080 \
+        --remote-debugging-port={cdp_port} \
+        --user-data-dir={user_data_dir} &
   
-  工具选择（严格按优先级）:
-    Priority 1: browser-use CLI（必须使用）
-      - browser-use open --cdp-url http://localhost:9222 {url}
-      - browser-use connect --cdp-url http://localhost:{port}
-      - 支持多实例管理、CDP连接
-    
-    Priority 2: Playwright MCP（仅作为备用，需说明）
-      - 仅当 browser-use CLI 不可用时使用
-      - 必须在报告中标注 "used_fallback_tool: true"
-      - 需在 exceptions 中记录 TOOL_FALLBACK
+  Step 2: browser-use通过CDP连接
+    browser-use --session {session_name} --cdp-url http://localhost:{cdp_port} open {url}
+  
+  参数说明:
+    - account_id: 账号标识
+    - cdp_port: Chrome调试端口（9222-9322，每实例唯一）
+    - user_data_dir: 用户数据目录（每实例唯一）
+    - proxy: Burp代理地址（127.0.0.1:8080，Chrome启动时配置）
       
-  输出: cdp_url, session_name
+  输出: cdp_url, session_name, chrome_pid
 
 实例管理:
   - 注册到 chrome_instances.json
   - 监控实例状态（running/closed）
   - 成对关闭原则（按session_name关闭）
 
+多实例配置示例:
+  | Session名 | CDP端口 | User Data Dir | 用途 |
+  |-----------|---------|---------------|------|
+  | admin_001 | 9222 | /tmp/chrome-admin-001 | 管理员账号 |
+  | user_001 | 9223 | /tmp/chrome-user-001 | 普通用户账号 |
+
 禁止事项:
   - taskkill /F /IM chrome.exe（关闭所有实例）
   - pkill -f "Google Chrome"
   - 使用 Playwright MCP 作为首选工具
+  - browser-use不通过--cdp-url连接（代理不生效）
 ```
 
 ### 3.2 页面导航
@@ -701,7 +748,14 @@ Cookie变化检测:
 ### 8.1 browser-use CLI 使用优化
 
 ```yaml
+关键：必须通过CDP连接才能使代理生效！
+
 推荐用法:
+  CDP连接（必须）:
+    - browser-use --session {name} --cdp-url http://localhost:9222 open {url}
+    - browser-use --session {name} --cdp-url http://localhost:9222 state --json
+    - 所有操作都必须带 --cdp-url 参数
+    
   页面状态获取:
     - browser-use state --json  # 获取完整页面状态
     - 输出包含: URL, title, elements列表, cookies
@@ -720,6 +774,10 @@ Cookie变化检测:
     
   Cookie获取:
     - browser-use cookies --json
+
+常见错误:
+  - browser-use open {url}  # ❌ 不通过CDP连接，代理不生效
+  - browser-use --cdp-url http://localhost:9222 open {url}  # ✅ 正确
 
 避免:
   - 不要频繁获取完整页面状态（每次导航后获取一次）
@@ -867,16 +925,26 @@ Navigator应自主判断退出时机，而非依赖固定数值。
 不在此文档直接写CLI命令，而是通过 Skill 获取详细用法：
 
 ```yaml
+shared-browser-state Skill（必须加载）:
+  加载方式: skill({ name: "shared-browser-state" })
+  
+  Skill内容包含:
+    - Chrome创建→CDP连接的完整工作流
+    - 代理配置方法（Chrome启动参数）
+    - 多实例管理最佳实践
+    - 成对关闭原则
+  
+  必须加载此Skill才能正确创建和管理Chrome实例。
+
 browser-use Skill:
   加载方式: skill({ name: "browser-use" })
   
   Skill内容包含:
     - 完整命令参考（open, state, click, input 等）
-    - 连接模式（connect, cloud, profile）
+    - CDP连接模式（--cdp-url参数）
     - 多会话管理（--session参数）
     - Cookie操作（cookies get/set/clear）
     - 常见问题排查（doctor, close）
-    - 高级功能（CDP、设备模拟）
   
   必须加载此Skill才能正确使用浏览器自动化功能。
   
@@ -944,35 +1012,36 @@ browser-use Skill:
 
 ```yaml
 任务开始前:
-  1. [ ] Skills全部加载完成（包括browser-use Skill）
-  2. [ ] 使用 browser-use CLI（不使用 Playwright MCP）
-  3. [ ] Chrome实例已连接
+  1. [ ] Skills全部加载完成（包括shared-browser-state Skill）
+  2. [ ] Chrome实例已创建（带 --proxy-server 参数）
+  3. [ ] browser-use通过 --cdp-url 连接到Chrome
+  4. [ ] 使用 browser-use CLI（不使用 Playwright MCP）
   
 首页加载后:
-  4. [ ] 获取页面状态 (browser-use state)
-  5. [ ] 检测登录状态
-  6. [ ] 如果未登录 → 搜索登录入口 → 导航到登录页 → 退出
-  7. [ ] 如果已登录 → 判断test_focus参数是否存在
+  5. [ ] 获取页面状态 (browser-use state)
+  6. [ ] 检测登录状态
+  7. [ ] 如果未登录 → 搜索登录入口 → 导航到登录页 → 退出
+  8. [ ] 如果已登录 → 判断test_focus参数是否存在
   
 探索过程中（广度模式）:
-  8. [ ] 覆盖不同页面类型
-  9. [ ] 发现多个功能模块
-  10. [ ] 标记敏感API（IDOR候选、高危API）
-  11. [ ] 实时写入MongoDB
+  9. [ ] 覆盖不同页面类型
+  10. [ ] 发现多个功能模块
+  11. [ ] 标记敏感API（IDOR候选、高危API）
+  12. [ ] 实时写入MongoDB
   
 探索过程中（深度模式）:
-  12. [ ] 专注指定功能区域
-  13. [ ] 发现该功能的完整API集合
-  14. [ ] 标记所有相关API的敏感度
+  13. [ ] 专注指定功能区域
+  14. [ ] 发现该功能的完整API集合
+  15. [ ] 标记所有相关API的敏感度
   
 探索过程中（自发思考）:
-  15. [ ] 判断当前页面是否有敏感功能
-  16. [ ] 决定是否深入探索当前功能
-  17. [ ] 判断信息丰富度是否足够
+  16. [ ] 判断当前页面是否有敏感功能
+  17. [ ] 决定是否深入探索当前功能
+  18. [ ] 判断信息丰富度是否足够
   
 任务结束时:
-  18. [ ] 自主判断退出时机（不依赖固定数值）
-  19. [ ] 生成完整报告（含高危API数量）
-  20. [ ] 标注使用的工具
-  21. [ ] 提供suggestions给Coordinator（含安全测试建议）
+  19. [ ] 自主判断退出时机（不依赖固定数值）
+  20. [ ] 生成完整报告（含高危API数量）
+  21. [ ] 标注使用的工具
+  22. [ ] 提供suggestions给Coordinator（含安全测试建议）
 ```
