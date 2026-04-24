@@ -12,10 +12,10 @@
       "**/result/**"
     ]
   },
-  "default_agent": "webtest",
+  "default_agent": "Coordinator",
   "agent": {
-    "webtest": {
-      "description": "WebTest Coordinator: Web渗透测试主控制器，通过@方式调用子Agent，串行执行测试流程。",
+    "Coordinator": {
+      "description": "Coordinator: Web渗透测试主控制器，通过@方式调用子Agent，串行执行测试流程。",
       "mode": "primary",
       "temperature": 0.2,
       "prompt": "{file:.opencode/agents/coordinator.md}",

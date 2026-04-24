@@ -2,7 +2,44 @@
 
 > AI-Agent Web渗透测试系统 | AI-Agent Web Penetration Testing System
 > 支持场景: Web探索 / 越权测试 / 注入测试 / 流程审批测试
-> 版本: 1.1 | 更新: 2026-04-22
+> 版本: 1.3 | 更新: 2026-04-23
+
+---
+
+## ⛔ MANDATORY DELEGATION RULES (强制委派规则)
+
+**违反以下规则将导致流程失败，必须立即停止并询问用户。**
+
+### 操作-委派映射表
+
+| 操作类型 | 必须使用task工具委派给 subagent | 禁止使用的工具 |
+|---------|-----------|---------------|
+| 浏览器操作 | @navigator | mcp__playwright__* |
+| Chrome管理 | @navigator | browser-use, chrome命令 |
+| 表单处理 | @form | mcp__playwright__browser_type, mcp__playwright__browser_fill_form |
+| 安全测试 | @security | mcp__burpbridge__* |
+| 账号解析 | @account_parser | 直接读取Excel |
+| 结果分析 | @analyzer | 无（纯分析Agent） |
+
+### 前置输出验证（强制执行）
+
+**每个委派步骤执行前必须输出**：
+
+```
+@{agent_name}
+[TASK] {任务描述}
+[FORBIDDEN] {禁止事项}
+```
+
+### 违规中断机制
+
+**如果你发现自己正在直接使用禁止的工具，立即停止并输出**：
+
+```
+[VIOLATION] 检测到违规操作: {违规行为}
+[CORRECT] 正确方式: @{agent_name}
+[STOP] 请用户确认是否继续
+```
 
 ---
 
@@ -12,23 +49,72 @@
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                    webtest (Coordinator / Primary Agent)                 │
+│                     Coordinator / Primary Agent                        │
 │  职责: 规划 → 调度 → 事件处理 → 状态监控 → 人机交互代理                    │
 └──────────────────────────┬──────────────────────────────────────────────┘
-                          │ dispatch
+                          │ dispatch via Task tool
        ┌──────────┬────────┼────────┬────────┬────────┐
        ▼          ▼        ▼        ▼        ▼        ▼
-   navigator    scout    form   security  analyzer  account_parser
-   (导航)      (分析)   (表单)   (安全)    (分析)    (解析)
+   navigator    form   security  analyzer  account_parser
+   (导航+分析)  (表单)   (安全)    (分析)      (解析)
        │                                            │
        └────────────────────────────────────────────┘
                           │
               共享状态层: result/*.json + MongoDB
 ```
 
-- **Agent 定义**: `.opencode/agents/` — 包含 webtest (主调度器) 及 6 个专业 Subagent
-- **Skill 知识库**: `.opencode/skills/` — 可复用的方法论模块 (24 个 Skills)
+**注意**: Scout功能已合并到Navigator，系统现为6个Agent（1个主控 + 5个子Agent）。
+
+- **Agent 定义**: `.opencode/agents/` — 包含 Coordinator (主调度器) 及 5 个专业 Subagent
+- **Skill 知识库**: `.opencode/skills/` — 可复用的方法论模块
 - **数据存储**: `result/` — JSON 文件存储，MongoDB 用于 BurpBridge 数据
+
+---
+
+## Agents Reference (Agent 清单)
+
+| Agent | 模式 | 角色 | 功能 | 调度者 |
+|-------|------|------|------|--------|
+| **Coordinator** | primary | Web渗透测试主控制器 | 工作流调度、状态管理、异常处理、进度评估 | — |
+| Navigator | subagent | 页面导航与探索专家 | Chrome管理、页面导航、页面分析、API发现 | Coordinator |
+| Form | subagent | 表单处理与登录专家 | 表单识别、智能填写、登录执行、Cookie同步 | Coordinator |
+| Security | subagent | 安全测试执行专家 | IDOR测试、注入测试、历史记录分析、BurpBridge集成 | Coordinator |
+| Analyzer | subagent | 安全测试结果分析专家 | 重放结果分析、漏洞判定、严重性评级 | Coordinator |
+| AccountParser | subagent | 账号文档解析专家 | 多格式账号解析、权限矩阵提取、流程配置生成 | Coordinator |
+
+### Agent 身份定义详情
+
+#### Coordinator
+- **角色**：Web渗透测试主控制器
+- **功能**：工作流调度、状态管理、异常处理、进度评估
+- **目的**：协调多Agent完成Web应用的自动化安全测试
+- **核心原则**：Coordinator决定"做什么"和"谁来做"，通过task工具以 @ 方式调用subagent
+
+#### Navigator
+- **角色**：页面导航与探索专家
+- **功能**：Chrome实例管理、页面导航、页面分析、API发现
+- **目的**：自主探索Web应用，发现页面和API端点，返回详细报告
+- **特点**：已合并Scout功能，探索一定量页面后主动退出
+
+#### Form
+- **角色**：表单处理与登录专家
+- **功能**：表单识别、智能填写、登录执行、Cookie同步
+- **目的**：自动化处理Web表单，建立测试会话的认证状态
+
+#### Security
+- **角色**：安全测试执行专家
+- **功能**：IDOR测试、注入测试、历史记录分析、BurpBridge集成
+- **目的**：发现Web应用的安全漏洞，验证访问控制缺陷
+
+#### Analyzer
+- **角色**：安全测试结果分析专家
+- **功能**：重放结果分析、漏洞判定、严重性评级、测试建议生成
+- **目的**：通过语义级对比，精准识别数据泄露和安全漏洞
+
+#### AccountParser
+- **角色**：账号文档解析专家
+- **功能**：多格式账号解析、权限矩阵提取、流程配置生成
+- **目的**：将账号和权限文档转换为标准化的测试配置
 
 ---
 
@@ -57,7 +143,8 @@
 | mongodb-writer | `.opencode/skills/data/mongodb-writer/` | 实时数据库写入 |
 | progress-tracking | `.opencode/skills/data/progress-tracking/` | 访问跟踪与进度控制 |
 | api-categorization | `.opencode/skills/data/api-categorization/` | API模块划分与分类 |
-| workflow-operation-logging | `.opencode/skills/data/workflow-operation-logging/` | 流程审批操作记录方法论 |
+| excel-merged-cell-handler | `.opencode/skills/data/excel-merged-cell-handler/` | Excel合并单元格处理 |
+| permission-matrix-parser | `.opencode/skills/data/permission-matrix-parser/` | 权限矩阵解析 |
 
 ### Security Skills
 
@@ -67,15 +154,9 @@
 | injection-testing | `.opencode/skills/security/injection-testing/` | 注入测试方法论 |
 | auth-context-sync | `.opencode/skills/security/auth-context-sync/` | 认证上下文同步 |
 | vulnerability-rating | `.opencode/skills/security/vulnerability-rating/` | 漏洞严重性评级 |
-| burpbridge-api-reference | `.opencode/skills/security/burpbridge-api-reference/` | BurpBridge REST API完整参考 |
-| workflow-authorization-testing | `.opencode/skills/security/workflow-authorization-testing/` | 流程审批越权测试方法论 |
+| burpbridge-api-reference | `.opencode/skills/security/burpbridge-api-reference/` | BurpBridge REST API参考 |
+| workflow-authorization-testing | `.opencode/skills/security/workflow-authorization-testing/` | 流程审批越权测试 |
 | sensitive-api-detection | `.opencode/skills/security/sensitive-api-detection/` | 敏感API识别规则 |
-
-### Workflow Skills (补充)
-
-| Skill | 路径 | 功能 |
-|-------|------|------|
-| security-error-handling | `.opencode/skills/workflow/security-error-handling/` | Security Agent错误处理 |
 
 ### Browser Skills
 
@@ -88,63 +169,36 @@
 
 ---
 
-## Agents Reference (Agent 清单)
-
-| Agent | 模式 | 职责 | 调度者 |
-|-------|------|------|--------|
-| **webtest** | primary | 主控制器：规划、调度、事件处理、人机交互 | — |
-| navigator | subagent | Chrome实例管理、页面导航、会话监控 | webtest |
-| scout | subagent | 页面分析、链接发现、API端点识别 | webtest |
-| form | subagent | 表单处理、登录执行、Cookie同步 | webtest |
-| security | subagent | 越权测试、注入测试、认证上下文管理 | webtest |
-| analyzer | subagent | 响应分析、漏洞判别、建议生成 | webtest |
-| account_parser | subagent | 账号文档解析、权限矩阵提取 | webtest |
-
----
-
 ## Quick Start (快速开始)
 
 ### 启动测试会话
 
 ```
-/webtest
+/coordinator
 目标URL: https://www.example.com
 请开始规划并执行Web探索测试。
 ```
 
 ### 前置条件检查
 
-```bash
-# 1. MongoDB 运行中
-docker ps | grep mongo
 
-# 2. Burp Suite 已启动，代理监听 127.0.0.1:8080
-curl http://localhost:8090/health
+# 1. MongoDB 运行中
+ps | Select-String mongo
+
+# 2. BurpBridge MCP 已启动
 
 # 3. browser-use CLI 已安装
-pip show browser-use
-```
+browser-use doctor
 
 ---
 
 ## Tool Priority Strategy (工具优先级策略)
 
-### 主Agent委派规则
-
-**重要**：webtest (Coordinator) 必须通过Task委派操作，禁止直接执行以下操作：
-
-| 禁止操作 | 必须委派给 | 原因 |
-|---------|-----------|------|
-| 浏览器操作 | Navigator / Form | 多实例管理需要browser-use CLI |
-| 账号解析 | AccountParser | 专业解析逻辑 |
-| 页面分析 | Scout | 专业分析逻辑 |
-| 安全测试 | Security | BurpBridge集成 |
-
 ### 工具使用优先级
 
 ```
 Priority 1: Browser Automation
-├─ browser-use CLI (Chrome CDP, 多实例管理) ← Navigator Agent 使用
+├─ browser-use CLI (Chrome CDP, 多实例管理) ← Navigator使用
 └─ Playwright MCP (备用，更灵活) ← 仅特殊情况下使用
 
 Priority 2: Security Testing
@@ -156,48 +210,30 @@ Priority 3: Data Management
 └─ MongoDB (burpbridge collections)
 ```
 
-### Playwright MCP 使用策略
+### 工具使用约束
 
-```
-Playwright MCP 使用规则:
-├─ 主要使用者: Navigator Agent (备用方案)
-├─ Coordinator: 禁止直接使用
-└─ 特殊情况: 当browser-use不可用时，Navigator可选择使用Playwright
-```
-
-### 委派日志
-
-所有委派行为记录在 `result/delegation_log.json`：
-
-```json
-{
-  "delegations": [
-    {
-      "timestamp": "2026-04-22T10:00:00Z",
-      "from_agent": "webtest",
-      "to_agent": "navigator",
-      "task_type": "create_instance",
-      "status": "success"
-    }
-  ],
-  "violations": []
-}
-```
+| Agent | 推荐工具 | 禁止工具 |
+|-------|---------|---------|
+| Navigator | browser-use CLI | 直接使用Playwright MCP（仅备用） |
+| Form | browser-use CLI | 直接操作浏览器 |
+| Security | BurpBridge MCP | — |
+| Analyzer | Read/Grep工具 | 执行任何操作（仅分析数据） |
+| Coordinator | task工具@调用subagent | mcp__playwright__*, mcp__burpbridge__* |
 
 ---
 
-## Tool Usage Principles (工具使用原则)
+## BurpBridge MCP 调用格式
 
-**Playwright MCP 性能优化**:
-- 使用 `depth` 参数限制快照深度
-- 使用 `filename` 参数保存大响应到文件
-- 避免频繁完整快照
+**重要**: 所有 BurpBridge MCP 工具需要 `input` 参数包装：
 
-**BurpBridge MCP 调用格式**:
 ```javascript
-// 所有工具需要 input 参数包装
+// 正确调用方式
 burpbridge_check_burp_health(input: {})
 burpbridge_list_paginated_http_history(input: { "host": "example.com" })
+burpbridge_replay_http_request_as_role(input: { "history_entry_id": "xxx", "target_role": "admin" })
+
+// 错误调用方式
+burpbridge_check_burp_health()  // 缺少 input 参数
 ```
 
 ---
@@ -209,7 +245,7 @@ burpbridge_list_paginated_http_history(input: { "host": "example.com" })
 ├─ 只读 (默认): 源代码、配置、文档
 ├─ 可执行: browser-use, docker, curl
 ├─ 可写: result/*.json, config/accounts.json
-└─ Agent调度: 仅 webtest 可调度子Agent
+└─ Agent调度: 仅 Coordinator 可调度 subagent
 
 安全原则:
 - 仅测试授权目标
@@ -221,12 +257,18 @@ burpbridge_list_paginated_http_history(input: { "host": "example.com" })
 
 ## Version
 
-- **Current**: 1.0
-- **Updated**: 2026-04-22
+- **Current**: 1.3
+- **Updated**: 2026-04-23
 
-### v1.0 (Initial Release)
-- 7 个 Agent (webtest + 6 subagents)
-- 17 个 Skills (5 类别)
+### 更新日志
+
+#### v1.3 (2026-04-23)
+- Scout功能合并到Navigator，系统精简为6个Agent
+- 更新强制委派规则，添加违规中断机制
+- 更新各Agent身份定义
+
+#### v1.0 (Initial Release)
+- 7 个 Agent (Coordinator + 6 subagents)
 - Browser-use CLI 集成
 - BurpBridge MCP 集成
 - 流程审批场景支持
