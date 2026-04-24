@@ -12,7 +12,7 @@
 
 ### 操作-委派映射表
 
-| 操作类型 | 必须使用task工具委派给 subagent | 禁止使用的工具 |
+| 操作类型 | dispatch subagent | 禁止使用的工具 |
 |---------|-----------|---------------|
 | 浏览器操作 | @navigator | mcp__playwright__* |
 | Chrome管理 | @navigator | browser-use, chrome命令 |
@@ -76,8 +76,8 @@
 | Agent | 模式 | 角色 | 功能 | 调度者 |
 |-------|------|------|------|--------|
 | **Coordinator** | primary | Web渗透测试主控制器 | 工作流调度、状态管理、异常处理、进度评估 | — |
-| Navigator | subagent | 页面导航与探索专家 | Chrome管理、页面导航、页面分析、API发现 | Coordinator |
-| Form | subagent | 表单处理与登录专家 | 表单识别、智能填写、登录执行、Cookie同步 | Coordinator |
+| Navigator | subagent | 页面导航与探索专家 | Chrome管理、页面导航、页面分析、API发现、Cookie同步 | Coordinator |
+| Form | subagent | 表单处理与登录专家 | 表单识别、智能填写、批量登录执行 | Coordinator |
 | Security | subagent | 安全测试执行专家 | IDOR测试、注入测试、历史记录分析、BurpBridge集成 | Coordinator |
 | Analyzer | subagent | 安全测试结果分析专家 | 重放结果分析、漏洞判定、严重性评级 | Coordinator |
 | AccountParser | subagent | 账号文档解析专家 | 多格式账号解析、权限矩阵提取、流程配置生成 | Coordinator |
@@ -88,18 +88,19 @@
 - **角色**：Web渗透测试主控制器
 - **功能**：工作流调度、状态管理、异常处理、进度评估
 - **目的**：协调多Agent完成Web应用的自动化安全测试
-- **核心原则**：Coordinator决定"做什么"和"谁来做"，通过task工具以 @ 方式调用subagent
+- **核心原则**：Coordinator决定"做什么"和"谁来做"，将具体工作交给subagent
 
 #### Navigator
 - **角色**：页面导航与探索专家
-- **功能**：Chrome实例管理、页面导航、页面分析、API发现
+- **功能**：Chrome实例管理、页面导航、页面分析、API发现、Cookie同步
 - **目的**：自主探索Web应用，发现页面和API端点，返回详细报告
-- **特点**：已合并Scout功能，探索一定量页面后主动退出
+- **特点**：已合并Scout功能，探索一定量页面后主动退出；统一管理浏览器状态（含Cookie）
 
 #### Form
 - **角色**：表单处理与登录专家
-- **功能**：表单识别、智能填写、登录执行、Cookie同步
+- **功能**：表单识别、智能填写、批量登录执行
 - **目的**：自动化处理Web表单，建立测试会话的认证状态
+- **特点**：批量处理多账号登录，遇验证码继续处理下一个，最后汇总返回
 
 #### Security
 - **角色**：安全测试执行专家
@@ -218,7 +219,7 @@ Priority 3: Data Management
 | Form | browser-use CLI | 直接操作浏览器 |
 | Security | BurpBridge MCP | — |
 | Analyzer | Read/Grep工具 | 执行任何操作（仅分析数据） |
-| Coordinator | task工具@调用subagent | mcp__playwright__*, mcp__burpbridge__* |
+| Coordinator | `@` 调用 subagent | mcp__playwright__*, mcp__burpbridge__* |
 
 ---
 

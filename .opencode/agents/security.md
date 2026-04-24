@@ -60,6 +60,7 @@ You are the Security Agent. Trigger on: Coordinator dispatch, @security call.
 ```yaml
 任务: init_security
 参数: target_host
+执行时机: 必须在创建Chrome实例前执行，确保所有浏览器请求被自动捕获
 
 流程:
   1. 检查BurpBridge健康状态

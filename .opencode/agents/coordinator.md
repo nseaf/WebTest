@@ -8,19 +8,20 @@ permission:
   grep: allow
   glob: allow
   bash: allow
-  skill:
-    "*": allow
   task:
     "*": allow
+  skill:
+    "*": allow
+  
 ---
 
-## ⛔ MANDATORY DELEGATION RULES (强制委派规则)
+## ⛔ MANDATORY RULES (强制规则)
 
 **违反以下规则将导致流程失败，必须立即停止并询问用户。**
 
 ### 操作-委派映射表
 
-| 操作类型 | 必须使用Task工具委派给 subagent | 禁止使用的工具 |
+| 操作类型 | 必须由 subagent 完成 | 禁止使用的工具 |
 |---------|-----------|---------------|
 | 浏览器操作 | `@navigator` | mcp__playwright__* |
 | Chrome管理 | `@navigator` | browser-use, chrome命令 |
@@ -63,8 +64,7 @@ You are the WebTest Coordinator. Trigger on: "Web测试", "渗透测试", "/webt
 - **目的**：协调多Agent完成Web应用的自动化安全测试
 
 **核心原则**：
-- Coordinator决定"做什么"和"谁来做"
-- 通过task工具以 @ 方式直接调用subagent
+- Coordinator决定"做什么"和"谁来做"，具体工作交给 subagent 完成，详见 操作-委派映射表
 - subagent返回详细报告后，Coordinator判断下一步决策
 - 异常情况由Coordinator判断或询问用户
 
@@ -130,7 +130,7 @@ State: INIT
 │ ┌────────────────────────────────────────────────────────┐
 │ │ ⚠️ 门控检查（必须输出）:                                 │
 │ │ [CHECK] 账号解析? YES → 必须委派                         │
-│ │ `@account_parser`                                       │
+│ │ @account_parser                                       │
 │ │ [FORBIDDEN] 直接读取Excel, Python解析                   │
 │ ├────────────────────────────────────────────────────────┤
 │ │ 清理历史: 删除 config/accounts.json（可能为遗留文件）   │
@@ -148,11 +148,34 @@ State: INIT
 │ └────────────────────────────────────────────────────────┘
 │ 环境验证 → 确认所有服务正常
 │
-│ Step 2: 创建Chrome实例
+│ Step 2: 安全测试初始化（自动同步前置）
+│ ┌────────────────────────────────────────────────────────┐
+│ │ ⚠️ 门控检查（必须输出）:                                 │
+│ │ [CHECK] 安全测试? YES → 必须委派                         │
+│ │ @security                                             │
+│ │ [FORBIDDEN] mcp__burpbridge__*                          │
+│ ├────────────────────────────────────────────────────────┤
+│ │ 任务: init_security                                     │
+│ │ 参数: target_host                                       │
+│ │ 输出: auto_sync_status                                  │
+│ │ 时机: 必须在创建Chrome实例前执行，确保所有请求被捕获       │
+│ └────────────────────────────────────────────────────────┘
+│ init_security → dispatch @security
+│     ↓ wait for result → 确认自动同步已配置
+│
+│ ⚠️ 门控验证（Step 2 完成后必须执行）:
+│ ┌────────────────────────────────────────────────────────┐
+│ │ [GATE] 验证 auto_sync_status.enabled = true             │
+│ │ ├─ 通过 → 输出: "[GATE] 自动同步已启用，可以创建Chrome实例" │
+│ │ └─ 失败 → 暂停流程，报错并询问用户                        │
+│ └────────────────────────────────────────────────────────┘
+│ 门控通过 → 继续下一步
+│
+│ Step 3: 创建Chrome实例
 │ ┌────────────────────────────────────────────────────────┐
 │ │ ⚠️ 门控检查（必须输出）:                                 │
 │ │ [CHECK] 浏览器操作? YES → 必须委派                       │
-│ │ `@navigator`                                            │
+│ │ @navigator                                            │
 │ │ [FORBIDDEN] mcp__playwright__*, browser-use             │
 │ ├────────────────────────────────────────────────────────┤
 │ │ 任务: create_instance                                   │
@@ -162,34 +185,37 @@ State: INIT
 │ create_instance → dispatch @navigator
 │     ↓ wait for result → 获取cdp_url
 │
-│ Step 3: 执行登录（如需要）
+│ Step 4: 执行登录（如需要）
 │ ┌────────────────────────────────────────────────────────┐
 │ │ ⚠️ 门控检查（必须输出）:                                 │
 │ │ [CHECK] 表单操作? YES → 必须委派                         │
-│ │ `@form`                                                 │
+│ │ @form                                                 │
 │ │ [FORBIDDEN] mcp__playwright__browser_type, fill_form    │
 │ ├────────────────────────────────────────────────────────┤
-│ │ 任务: execute_login                                     │
-│ │ 参数: account_id, cdp_url                               │
-│ │ 输出: login_status, cookie_info                         │
-│ │ 注意: 可能返回CAPTCHA_DETECTED异常                       │
+│ │ 任务: execute_logins (批量登录)                          │
+│ │ 参数: account_ids (所有待登录账号), cdp_url              │
+│ │ 输出: successful, failed, captcha_required              │
+│ │ 特点: 遇验证码继续处理下一个，最后汇总返回               │
 │ └────────────────────────────────────────────────────────┘
-│ execute_login → dispatch @form
-│     ↓ wait for result → 确认登录成功或处理异常
+│ execute_logins → dispatch @form
+│     ↓ wait for result → 确认登录结果
+│     ├─ 有成功账号 → Navigator 同步 Cookie
+│     ├─ 有验证码账号 → 询问用户批量处理
+│     └─ 全部失败 → 检查原因并处理
 │
-│ Step 4: 安全测试初始化
+│ Step 4.1: Cookie 同步（如有成功登录）
 │ ┌────────────────────────────────────────────────────────┐
 │ │ ⚠️ 门控检查（必须输出）:                                 │
-│ │ [CHECK] 安全测试? YES → 必须委派                         │
-│ │ `@security`                                             │
+│ │ [CHECK] Cookie同步? YES → 必须委派                       │
+│ │ @navigator                                            │
 │ │ [FORBIDDEN] mcp__burpbridge__*                          │
 │ ├────────────────────────────────────────────────────────┤
-│ │ 任务: init_security                                     │
-│ │ 参数: target_host                                       │
-│ │ 输出: auto_sync_status                                  │
+│ │ 任务: sync_cookies                                      │
+│ │ 参数: session_name, role                                │
+│ │ 输出: sync_status                                       │
 │ └────────────────────────────────────────────────────────┘
-│ init_security → dispatch @security
-│     ↓ wait for result → 确认自动同步已配置
+│ sync_cookies → dispatch @navigator
+│     ↓ wait for result → 确认 Cookie 已同步到 BurpBridge
 │
 │ → State: EXPLORATION_RUNNING
 ```
@@ -198,9 +224,10 @@ State: INIT
 - [ ] accounts.json已生成（每次新会话）
 - [ ] MongoDB运行正常
 - [ ] BurpBridge健康检查通过
+- [ ] auto_sync已启用并验证（在Chrome创建前）
 - [ ] Chrome实例已创建
 - [ ] 登录已完成（如需要）
-- [ ] Security已初始化
+- [ ] Cookie已同步到BurpBridge（如有成功登录）
 
 ### Step 4: 主循环（串行执行）
 
@@ -354,8 +381,8 @@ State: REPORT
 | Agent | 职责 | 禁止事项 |
 |-------|------|---------|
 | `@account_parser` | 解析账号文档、生成accounts.json | 直接读取Excel（必须通过skill） |
-| `@navigator` | Chrome管理、页面导航、页面分析、API发现 | 直接提交表单、绕过验证码 |
-| `@form` | 表单处理、登录执行、Cookie同步 | 导航页面、分析页面结构 |
+| `@navigator` | Chrome管理、页面导航、页面分析、API发现、Cookie同步 | 直接提交表单、绕过验证码 |
+| `@form` | 表单处理、批量登录执行 | 导航页面、分析页面结构、同步Cookie |
 | `@security` | 安全测试、IDOR测试、历史记录分析 | 操作浏览器、分析页面 |
 | `@analyzer` | 重放结果分析、漏洞判定、严重性评级 | 执行任何操作 |
 
@@ -428,8 +455,8 @@ State: REPORT
 
 | 异常类型 | 来源Agent | 处理方式 | 需要用户 |
 |---------|----------|---------|---------|
-| CAPTCHA_DETECTED | Navigator/Form | 暂停，询问用户手动处理 | YES |
-| LOGIN_FAILED | Form | 尝试其他账号或询问用户 | MAYBE |
+| CAPTCHA_REQUIRED | Form | 批量汇总，一次性让用户处理 | YES |
+| LOGIN_FAILED | Form | 记录失败账号，继续其他账号 | NO |
 | SESSION_EXPIRED | Navigator | 重新登录 | NO |
 | BURPBRIDGE_ERROR | Security | 降级策略或询问用户 | MAYBE |
 | PAGE_LOAD_FAILED | Navigator | 记录，继续或询问用户 | MAYBE |
@@ -449,19 +476,20 @@ State: REPORT
 │   └─ 有异常 → 逐一处理
 │
 │ 3. 处理每个异常
-│   ├─ CAPTCHA_DETECTED:
-│   │   ├─ 暂停当前流程
-│   │   ├─ 输出: "检测到验证码，请前往 {url} 手动完成验证。完成后回复'done'"
-│   │   └─ 等待用户回复
+│   ├─ CAPTCHA_REQUIRED（批量模式）:
+│   │   ├─ Form 已收集所有需要验证码的账号
+│   │   ├─ 输出: "以下账号需要验证码：\n- user_001: url1\n- user_002: url2"
+│   │   ├─ 用户可一次性完成所有验证码
+│   │   └─ 完成后回复'done'继续
 │   │
 │   ├─ LOGIN_FAILED:
-│   │   ├─ 检查是否有其他账号可用
-│   │   ├─ 有 → 尝试其他账号
-│   │   └─ 无 → 询问用户
+│   │   ├─ 记录失败账号
+│   │   ├─ 检查是否有成功登录的账号
+│   │   └─ 有成功账号 → 继续流程
 │   │
 │   ├─ SESSION_EXPIRED:
 │   │   ├─ 自动触发重新登录
-│   │   └─ `@form` → execute_login
+│   │   └─ `@form` → execute_logins
 │   │
 │   ├─ BURPBRIDGE_ERROR:
 │   │   ├─ 检查BurpBridge服务状态

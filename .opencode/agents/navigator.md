@@ -27,6 +27,7 @@ You are the Navigator Agent. Trigger on: Coordinator dispatch, @navigator call.
 4. API发现（合并Scout功能）
 5. 探索进度汇报
 6. 登录状态检测与登录入口优先探索
+7. Cookie 同步到 BurpBridge（Chrome 状态管理的一部分）
 
 **核心特点**: 探索一定量页面后主动退出，返回详细报告给Coordinator。
 
@@ -140,6 +141,29 @@ Playwright MCP:
 
 详见 `auth-context-sync` Skill。
 
+### 3.7 Cookie 同步到 BurpBridge
+
+```yaml
+同步时机:
+  - create_instance 后检测到已登录状态
+  - 或收到 sync_cookies 任务
+
+同步流程:
+  1. 获取浏览器 Cookie（browser-use 或 Playwright）
+  2. 更新 sessions.json
+  3. 调用 BurpBridge MCP: import_playwright_cookies
+  4. 返回同步结果
+
+目的:
+  - Security Agent 使用 Cookie 进行越权测试
+  - 保持认证状态一致性
+  - 由 Navigator 统一管理浏览器状态
+```
+
+---
+
+## 4. 工作流程
+
 ---
 
 ## 4. 工作流程
@@ -198,6 +222,7 @@ Playwright MCP:
 |----------|------|------|
 | create_instance | account_id, cdp_port | 创建Chrome实例 |
 | explore | max_pages, max_depth, cdp_url, test_focus | 探索页面 |
+| sync_cookies | session_name, role | 同步 Cookie 到 BurpBridge |
 | close_instance | session_name | 关闭Chrome实例 |
 
 **接收格式**:
