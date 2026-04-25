@@ -82,6 +82,8 @@ Start-Process $chromePath -ArgumentList @(
 
 ### 多实例配置
 
+针对具体测试场景，决定创建实例个数（例如多账户越权场景测试，应针对每一个账户或角色创建对应实例）并创建对应的session与其连接
+
 | Session名 | CDP端口 | User Data Dir | 用途 |
 |-----------|---------|---------------|------|
 | admin_001 | 9222 | /tmp/chrome-admin-001 | 管理员账号 |
@@ -91,34 +93,62 @@ Start-Process $chromePath -ArgumentList @(
 
 ## browser-use CDP连接（Step 2）
 
-### 连接到已有Chrome实例
+### 连接机制说明
 
-**必须使用 `--cdp-url` 参数连接**：
+**关键原则**：
+- **首次连接**：session 首次创建时，必须使用 `--cdp-url` 连接到 Chrome 实例
+- **后续操作**：session 创建后，所有操作**不需要**重复传递 `--cdp-url` 参数
+- browser-use CLI 会自动维护 session 与 CDP 连接的映射关系
+
+### 首次连接到 Chrome 实例
+
+**必须使用 `--cdp-url` 参数建立连接**：
 
 ```bash
-# 连接到Chrome实例
+# 首次连接：需要 --cdp-url（会创建/关联 session）
 browser-use --session {session_name} --cdp-url http://localhost:9222 open https://example.com
+```
 
-# 查看当前页面状态
-browser-use --session {session_name} --cdp-url http://localhost:9222 state --json
+### 后续操作（无需 --cdp-url）
 
-# 执行操作
-browser-use --session {session_name} --cdp-url http://localhost:9222 click 0
-browser-use --session {session_name} --cdp-url http://localhost:9222 type "#username" "admin"
+```bash
+# session 已建立连接后，所有操作都不需要 --cdp-url
+browser-use --session {session_name} state
+browser-use --session {session_name} click 0
+browser-use --session {session_name} type "#username" "admin"
+browser-use --session {session_name} scroll down
 ```
 
 ### ⚠️ 常见错误
 
 ```bash
-# ❌ 错误：不通过CDP连接，代理不生效
+# ❌ 错误：不创建 Chrome 实例直接使用 browser-use
 browser-use open https://example.com
 
-# ✅ 正确：先创建Chrome实例，再通过CDP连接
-# Step 1: 创建带代理的Chrome
+# ❌ 错误：每次操作都带 --cdp-url（不必要，但不会报错）
+browser-use --session admin_001 --cdp-url http://localhost:9222 state
+browser-use --session admin_001 --cdp-url http://localhost:9222 click 0
+
+# ✅ 正确工作流：
+# Step 1: 创建带代理的 Chrome 实例
 chrome --proxy-server=http://127.0.0.1:8080 --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-test
 
-# Step 2: browser-use通过CDP连接
-browser-use --cdp-url http://localhost:9222 open https://example.com
+# Step 2: 首次连接（带 --cdp-url）
+browser-use --session admin_001 --cdp-url http://localhost:9222 open https://example.com
+
+# Step 3: 后续操作（不需要 --cdp-url）
+browser-use --session admin_001 state
+browser-use --session admin_001 click 0
+```
+
+### 连接验证
+
+```bash
+# 验证 session 是否已连接
+browser-use --session {session_name} state
+
+# 如果 session 未连接，会报错：
+# Error: Session '{session_name}' not found or not connected
 ```
 
 ---
@@ -168,9 +198,9 @@ function getCdpConnection(account_id) {
 
 ---
 
-## 成对关闭原则
+## 成对原则
 
-**重要**：browser-use session和Chrome实例必须成对关闭
+**重要**：browser-use session和Chrome实例必须成对打开或关闭
 
 ```bash
 # 1. 先关闭browser-use session

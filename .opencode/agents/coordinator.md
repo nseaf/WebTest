@@ -21,13 +21,13 @@ permission:
 
 ### 操作-委派映射表
 
-| 操作类型 | 必须由 subagent 完成 | 禁止使用的工具 |
+| 操作类型 | 必须由 subagent 完成 | 要求 |
 |---------|-----------|---------------|
-| 浏览器操作 | `@navigator` | browser-use, chrome命令 |
-| Chrome管理 | `@navigator` | browser-use, chrome命令 |
-| 表单处理 | `@form` | browser-use, chrome命令 |
-| 安全测试 | `@security` | mcp__burpbridge__* |
-| 账号解析 | `@account_parser` | 直接读取Excel |
+| 浏览器操作 | `@navigator` | 使用browser-use cli + skill |
+| Chrome管理 | `@navigator` | 使用chrome命令创建和维护浏览器实例 |
+| 表单处理 | `@form` | 禁止建立新浏览器实例，必须在navigator已建立实例基础上操作 |
+| 安全测试 | `@security` | 使用mcp__burpbridge__* |
+| 账号解析 | `@account_parser` | 禁止直接读取Excel |
 | 结果分析 | `@analyzer` | 无（纯分析Agent） |
 
 ### 前置输出验证（强制执行）
@@ -176,21 +176,79 @@ State: INIT
 │ │ ⚠️ 门控检查（必须输出）:                                 │
 │ │ [CHECK] 浏览器操作? YES → 必须委派                       │
 │ │ @navigator                                            │
-│ │ [FORBIDDEN] browser-use, chrome命令                     │
 │ ├────────────────────────────────────────────────────────┤
 │ │ 任务: create_instance                                   │
-│ │ 参数: account_id, cdp_port                              │
-│ │ 输出: cdp_url, session_name                             │
+│ │ 参数: 见下方详细说明                                     │
+│ │ 输出: cdp_url, session_name, chrome_pid                 │
 │ └────────────────────────────────────────────────────────┘
 │ create_instance → dispatch @navigator
-│     ↓ wait for result → 获取cdp_url
+│     ↓ wait for result → 获取cdp_url, session_name
+│
+│ ⚠️ 参数传递规范（通过任务描述传递，非 Agent Contract）:
+│ ┌────────────────────────────────────────────────────────┐
+│ │ Coordinator 在任务描述中必须包含：                        │
+│ │                                                        │
+│ │ 1. 账号信息（从 accounts.json 读取）：                   │
+│ │    - account_id: 账号唯一标识                           │
+│ │    - role: 账号角色                                     │
+│ │    - username: 登录用户名                               │
+│ │                                                        │
+│ │ 2. Chrome 配置：                                        │
+│ │    - cdp_port: CDP 端口（每实例唯一）                    │
+│ │    - user_data_dir: 用户数据目录路径                    │
+│ │    - proxy_server: 代理服务器地址                       │
+│ │                                                        │
+│ │ 3. 账号配置文件信息：                                    │
+│ │    - accounts_config_path: config/accounts.json 路径    │
+│ │    - total_accounts: 总账号数量                         │
+│ │    - role_mapping: 角色到账号ID的映射                   │
+│ └────────────────────────────────────────────────────────┘
+│
+│ Step 3 完整调用示例:
+│ ┌────────────────────────────────────────────────────────┐
+│ │ `@navigator`                                           │
+│ │                                                        │
+│ │ ---Agent Contract---                                   │
+│ │ [Session ID] session_20260425_001                      │
+│ │ [Target Host] example.com                              │
+│ │ [Task Type] create_instance                            │
+│ │ ---End Contract---                                     │
+│ │                                                        │
+│ │ 任务: create_instance                                  │
+│ │                                                        │
+│ │ 请创建 Chrome 实例，配置如下：                           │
+│ │                                                        │
+│ │ **账号信息**（从 config/accounts.json 读取）：          │
+│ │ - account_id: admin_001                                │
+│ │ - role: admin                                          │
+│ │ - username: admin@example.com                          │
+│ │                                                        │
+│ │ **Chrome 配置**：                                       │
+│ │ - cdp_port: 9222                                       │
+│ │ - user_data_dir: C:\temp\chrome-admin-001              │
+│ │ - proxy_server: http://127.0.0.1:8080                  │
+│ │                                                        │
+│ │ **账号配置文件信息**：                                   │
+│ │ - 配置路径: config/accounts.json                       │
+│ │ - 总账号数: 3                                          │
+│ │ - 角色映射: { "admin": "admin_001",                    │
+│ │              "user": ["user_001", "user_002"] }        │
+│ │                                                        │
+│ │ **输出要求**：                                          │
+│ │ - 返回 cdp_url, session_name, chrome_pid               │
+│ └────────────────────────────────────────────────────────┘
+│
+│ ⚠️ 多账号场景：循环创建实例
+│ FOR each account IN accounts:
+│   dispatch @navigator create_instance (带完整参数)
+│   wait for result
+│ END FOR
 │
 │ Step 4: 执行登录（如需要）
 │ ┌────────────────────────────────────────────────────────┐
 │ │ ⚠️ 门控检查（必须输出）:                                 │
 │ │ [CHECK] 表单操作? YES → 必须委派                         │
 │ │ @form                                                 │
-│ │ [FORBIDDEN] browser-use, chrome命令                     │
 │ ├────────────────────────────────────────────────────────┤
 │ │ 任务: execute_logins (批量登录)                          │
 │ │ 参数: account_ids (所有待登录账号), cdp_url              │
@@ -235,7 +293,7 @@ State: INIT
 State: EXPLORATION_RUNNING
 │ Loop:
 │   ├─ 1. `@navigator` explore
-│   │   ⚠️ `@navigator` | [FORBIDDEN] browser-use, chrome命令
+│   │   ⚠️ `@navigator`
 │   │   ├─ 任务: 探索页面（合并Scout功能）
 │   │   ├─ 参数: max_pages, max_depth, cdp_url
 │   │   ├─ 功能: 导航 + 页面分析 + API发现 + 记录
@@ -361,7 +419,7 @@ State: REPORT
 
 ### @调用格式
 
-调用subagent时，必须注入Agent Contract上下文：
+调用subagent时，必须注入Agent Contract上下文（下发任务及上下文即可，无需指导任务具体工作）：
 
 ```
 @{agent_name}
@@ -380,9 +438,9 @@ State: REPORT
 
 | Agent | 职责 | 禁止事项 |
 |-------|------|---------|
-| `@account_parser` | 解析账号文档、生成accounts.json | 直接读取Excel（必须通过skill） |
-| `@navigator` | Chrome管理、页面导航、页面分析、API发现、Cookie同步 | 直接提交表单、绕过验证码 |
-| `@form` | 表单处理、批量登录执行 | 导航页面、分析页面结构、同步Cookie |
+| `@account_parser` | 解析账号文档、生成accounts.json | 禁止直接读取Excel（必须通过skill） |
+| `@navigator` | Chrome管理、页面导航、页面分析、API发现、Cookie同步 | 禁止直接提交表单、绕过验证码 |
+| `@form` | 表单处理、批量登录执行 | 禁止创建新浏览器实例，必须在navigator已建立基础上进行 |
 | `@security` | 安全测试、IDOR测试、历史记录分析 | 操作浏览器、分析页面 |
 | `@analyzer` | 重放结果分析、漏洞判定、严重性评级 | 执行任何操作 |
 

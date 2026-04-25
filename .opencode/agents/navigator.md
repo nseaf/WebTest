@@ -36,11 +36,16 @@ You are the Navigator Agent. Trigger on: Coordinator dispatch, @navigator call.
 ```yaml
 browser-use CLI:
   - 用于: 所有浏览器操作
-  - 必须通过CDP连接: --cdp-url http://localhost:9222
+  - 首次连接: 必须使用 --cdp-url http://localhost:9222 建立连接
+  - 后续操作: 不需要重复传递 --cdp-url（session 会自动维护连接）
   - 状态: 必须使用
 ```
 
 **详见**: `shared-browser-state` Skill（Chrome创建→CDP连接工作流）
+
+**关键点**：
+- session 首次创建时，必须通过 `--cdp-url` 连接到 Chrome 实例
+- 连接建立后，所有后续操作只需 `--session {name}` 即可
 
 ---
 
@@ -215,23 +220,74 @@ browser-use CLI:
 
 | 任务类型 | 参数 | 说明 |
 |----------|------|------|
-| create_instance | account_id, cdp_port | 创建Chrome实例 |
-| explore | max_pages, max_depth, cdp_url, test_focus | 探索页面 |
+| create_instance | account_id, cdp_port, accounts_config_path, total_accounts, role_mapping | 创建Chrome实例 |
+| explore | max_pages, max_depth, test_focus | 探索页面（session已建立） |
 | sync_cookies | session_name, role | 同步 Cookie 到 BurpBridge |
 | close_instance | session_name | 关闭Chrome实例 |
 
-**接收格式**:
-```json
-{
-  "task": "explore",
-  "parameters": {
-    "max_pages": 10,
-    "max_depth": 3,
-    "cdp_url": "http://localhost:9222",
-    "test_focus": "敏感功能"
-  }
-}
+### 参数传递说明
+
+**Navigator 接收参数的方式**：
+- **不通过 Agent Contract**：Agent Contract 仅包含 session_id, target_host 等上下文
+- **通过任务描述传递**：Coordinator 在任务描述中提供详细参数
+
+### create_instance 任务示例
+
+Coordinator 派发的完整任务描述：
+
 ```
+@navigator
+
+---Agent Contract---
+[Session ID] session_20260425_001
+[Target Host] example.com
+[Task Type] create_instance
+---End Contract---
+
+任务: create_instance
+
+请创建 Chrome 实例，配置如下：
+
+**账号信息**：
+- account_id: admin_001
+- role: admin
+- username: admin@example.com
+
+**Chrome 配置**：
+- cdp_port: 9222
+- user_data_dir: C:\temp\chrome-admin-001
+- proxy_server: http://127.0.0.1:8080
+
+**账号配置文件**：
+- 配置路径: config/accounts.json
+- 总账号数: 3
+- 角色映射: { "admin": "admin_001", "user": ["user_001", "user_002"] }
+
+**输出要求**：
+- 返回 cdp_url, session_name, chrome_pid
+```
+
+### explore 任务示例
+
+```
+@navigator
+
+---Agent Contract---
+[Session ID] session_20260425_001
+[Target Host] example.com
+[Task Type] explore
+---End Contract---
+
+任务: explore
+
+请探索目标网站，参数如下：
+- max_pages: 20
+- max_depth: 3
+- test_focus: 敏感功能（用户管理、数据导出）
+- session_name: admin_001（已建立连接）
+```
+
+**注意**：explore 任务假设 session 已通过 create_instance 建立连接，不需要 --cdp-url。
 
 ---
 

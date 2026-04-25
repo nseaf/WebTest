@@ -247,19 +247,44 @@ function prioritizeLinks(links) {
 
 ## 导航方法
 
-### 直接URL导航
+### 前提条件
 
+**导航前必须确保**：
+1. Chrome 实例已创建（带 `--proxy-server` 参数）
+2. browser-use session 已通过 `--cdp-url` 首次连接
+
+**首次连接命令**（仅需执行一次）：
 ```bash
-browser-use --session {session_name} --cdp-url {cdp_url} open {url}
+# 首次连接：带 --cdp-url
+browser-use --session {session_name} --cdp-url http://localhost:9222 open {初始URL}
 
 # 示例
-browser-use --session admin_001 --cdp-url http://localhost:9222 open https://example.com/profile
+browser-use --session admin_001 --cdp-url http://localhost:9222 open https://example.com
+```
+
+### 直接URL导航
+
+**后续导航不需要 --cdp-url**：
+```bash
+browser-use --session {session_name} open {url}
+
+# 示例
+browser-use --session admin_001 open https://example.com/profile
+browser-use --session admin_001 open https://example.com/dashboard
 ```
 
 ### 点击链接导航
 
 ```bash
 browser-use --session admin_001 click "a[href='/profile']"
+browser-use --session admin_001 click "text=用户设置"
+```
+
+### 获取页面状态
+
+```bash
+# 查看当前页面状态（用于导航后验证）
+browser-use --session admin_001 state
 ```
 
 ### 使用/browser-use Skill
@@ -270,6 +295,17 @@ browser-use --session admin_001 click "a[href='/profile']"
 - 点击页面右上角的'个人中心'链接
 - 等待页面加载完成
 - 返回当前URL"
+```
+
+### ⚠️ 注意事项
+
+```bash
+# ❌ 错误：session 未建立连接时直接操作
+browser-use --session new_session state  # 报错：Session not found
+
+# ✅ 正确：先建立连接，再执行导航
+browser-use --session new_session --cdp-url http://localhost:9222 open https://example.com
+browser-use --session new_session state  # 现在可以正常操作
 ```
 
 ---
