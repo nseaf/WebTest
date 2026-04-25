@@ -40,6 +40,69 @@ def _close_mongo_client():
         _mongo_client = None
 
 
+def _safe_get_field(data: dict, *field_names: str, default=None):
+    """
+    Safely get a field from a dict, trying multiple field name variations.
+    Useful for handling potential camelCase/snake_case mismatches.
+
+    Args:
+        data: The dictionary to read from
+        *field_names: Field names to try (in order of preference)
+        default: Default value if no field is found
+
+    Returns:
+        The first non-None value found, or default
+    """
+    if data is None:
+        return default
+
+    for name in field_names:
+        value = data.get(name)
+        if value is not None:
+            return value
+
+    return default
+
+
+def _extract_history_fields(data: dict) -> dict:
+    """
+    Extract fields from history API response with robust name mapping.
+    Handles both camelCase (current Java) and snake_case (potential legacy) field names.
+
+    Returns a dict with normalized field names (snake_case for Python output).
+    """
+    if data is None:
+        return {}
+
+    return {
+        # ID - MongoDB _id or id field
+        'id': _safe_get_field(data, 'id', '_id'),
+
+        # URL - try camelCase first
+        'url': _safe_get_field(data, 'url', 'URL'),
+
+        # Method
+        'method': _safe_get_field(data, 'method'),
+
+        # Response status code - try multiple variations
+        'response_status_code': _safe_get_field(data, 'responseStatusCode', 'response_status_code', 'statusCode', 'status_code'),
+
+        # Timestamp
+        'timestamp_ms': _safe_get_field(data, 'timestampMs', 'timestamp_ms'),
+        'timestamp': _safe_get_field(data, 'timestamp'),
+
+        # Request raw
+        'request_raw': _safe_get_field(data, 'requestRaw', 'request_raw'),
+
+        # Response summary
+        'response_summary': _safe_get_field(data, 'responseSummary', 'response_summary'),
+
+        # Response body info
+        'has_large_response_body': _safe_get_field(data, 'hasLargeResponseBody', 'has_large_response_body'),
+        'response_body_length': _safe_get_field(data, 'responseBodyLength', 'response_body_length'),
+    }
+
+
 class HealthCheckInput(BaseModel):
     """健康检查,输入参数:"""
     pass
@@ -313,18 +376,39 @@ async def list_paginated_http_history(input: ListHistoryInput) -> dict:
             data = resp.json()
 
             items = data.get("items", [])
+
+            # 使用健壮的字段提取
+            processed_items = []
+            for item in items:
+                extracted = _extract_history_fields(item)
+                processed_items.append({
+                    'id': extracted['id'],
+                    'url': extracted['url'],
+                    'method': extracted['method'],
+                    'response_status_code': extracted['response_status_code'],
+                    'timestamp_ms': extracted['timestamp_ms'],
+                })
+
+            # 检测潜在的数据问题
+            warnings = []
+            if items:
+                sample = items[0]
+                available_fields = list(sample.keys())
+                expected_fields = ['id', 'url', 'method', 'responseStatusCode', 'timestampMs']
+                missing = [f for f in expected_fields if f not in available_fields]
+                if missing:
+                    warnings.append(f"Expected fields not found: {missing}")
+                    warnings.append(f"Available fields: {available_fields}")
+
             return {
                 "status": "success",
-                "total_records": data.get("total", 0),  # 总记录数
-                "current_page": data.get("page", 1),    # 当前页码
-                "page_size": data.get("page_size", 20), # 每页数量
+                "total_records": data.get("total", 0),
+                "current_page": data.get("page", 1),
+                "page_size": data.get("page_size", 20),
                 "returned_items_count": len(items),
-                # 当前提供一个简短的预览
-                "items_preview": [
-                    {k: v for k, v in item.items() if k in ['id', 'url', 'method', 'responseStatusCode']}
-                    for item in items
-                ],
-                "full_items_raw": items  # 完整的原始数据
+                "items_preview": processed_items,
+                "full_items_raw": items,  # 保留原始数据用于调试
+                "debug_warnings": warnings if warnings else None,
             }
         except httpx.HTTPStatusError as e:
             error_detail = {}
@@ -368,23 +452,51 @@ async def get_http_request_detail(input: GetHistoryDetailInput) -> dict:
             resp.raise_for_status()
             data = resp.json()
 
+            # 使用健壮的字段提取
+            extracted = _extract_history_fields(data)
+
             # 安全处理可能为 None 的字段
-            request_raw = data.get("requestRaw") or ""
+            request_raw = extracted.get('request_raw') or ""
             preview = request_raw[:200]
             if len(request_raw) > 200:
                 preview += "..."
 
+            # 检测潜在的数据问题
+            warnings = []
+            available_fields = list(data.keys())
+            expected_fields = ['id', 'url', 'method', 'responseStatusCode', 'timestampMs', 'requestRaw']
+            missing = [f for f in expected_fields if f not in available_fields]
+            if missing:
+                warnings.append(f"Expected fields not found: {missing}")
+                warnings.append(f"Available fields: {available_fields}")
+
+            # 检测默认值问题
+            if extracted.get('response_status_code') in (0, None, -1):
+                warnings.append(f"response_status_code appears to be default/missing: {extracted.get('response_status_code')}")
+            if not extracted.get('url'):
+                warnings.append("url field is empty")
+            if not extracted.get('method'):
+                warnings.append("method field is empty")
+            if not extracted.get('request_raw'):
+                warnings.append("request_raw field is empty")
+
             return {
                 "status": "success",
-                "id": data.get("id"),
-                "url": data.get("url"),
-                "method": data.get("method"),
-                "response_status_code": data.get("responseStatusCode"),
-                "response_status": data.get("responseStatusCode"),  # 别名，便于理解
-                "timestamp_ms": data.get("timestampMs"),
+                "id": extracted.get('id'),
+                "url": extracted.get('url'),
+                "method": extracted.get('method'),
+                "response_status_code": extracted.get('response_status_code'),
+                "response_status": extracted.get('response_status_code'),  # 别名，便于理解
+                "timestamp_ms": extracted.get('timestamp_ms'),
+                "timestamp": extracted.get('timestamp'),
                 "request_raw_preview": preview,
                 "request_raw": request_raw,  # 完整的原始请求报文
-                "response_summary": data.get("responseSummary")  # 响应摘要（精简响应头 + 摘要响应体）
+                "response_summary": extracted.get('response_summary'),
+                "has_large_response_body": extracted.get('has_large_response_body'),
+                "response_body_length": extracted.get('response_body_length'),
+                # Debug information
+                "debug_warnings": warnings if warnings else None,
+                "debug_available_fields": available_fields,
             }
         except httpx.HTTPStatusError as e:
             error_detail = {}
@@ -398,6 +510,44 @@ async def get_http_request_detail(input: GetHistoryDetailInput) -> dict:
             return {"status": "error", "message": f"Request error during fetch: {str(e)}"}
         except Exception as e:
             return {"status": "error", "message": f"Unexpected error during fetch: {str(e)}"}
+
+
+class DebugRawHistoryInput(BaseModel):
+    """
+    调试：获取原始历史记录,输入参数:
+    - history_id (str): MongoDB ObjectId 字符串
+    """
+    history_id: str
+
+
+@app.tool(
+    name="debug_raw_history_entry",
+    description="调试工具：获取历史记录的原始 API 响应，不做任何字段转换。用于排查字段名不匹配问题。"
+)
+async def debug_raw_history_entry(input: DebugRawHistoryInput) -> dict:
+    """
+    Debug tool: Returns the raw API response for a history entry.
+    No field mapping, no processing - just the raw data.
+    """
+    history_id = input.history_id.strip()
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await client.get(f"{BURP_BRIDGE_URL}/history/{history_id}")
+            if resp.status_code == 404:
+                return {"status": "error", "message": f"History entry with ID '{history_id}' not found."}
+
+            resp.raise_for_status()
+            data = resp.json()
+
+            return {
+                "status": "success",
+                "raw_response": data,
+                "field_names": list(data.keys()) if isinstance(data, dict) else "Not a dict",
+                "field_types": {k: type(v).__name__ for k, v in data.items()} if isinstance(data, dict) else "N/A",
+            }
+        except Exception as e:
+            return {"status": "error", "message": f"Debug fetch failed: {str(e)}"}
 
 
 class ConfigureAuthInput(BaseModel):
