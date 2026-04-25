@@ -4,14 +4,11 @@
   
   "navigator_config": {
     "navigation_timeout_ms": 30000,
-    
-    "tool_priority": {
-      "primary": "browser-use CLI",
-      "fallback": "Playwright MCP",
-      "fallback_condition": "browser-use不可用时",
-      "fallback_report_required": true
+
+    "tool": {
+      "primary": "browser-use CLI"
     },
-    
+
     "login_detection": {
       "enabled": true,
       "check_on_first_page": true,

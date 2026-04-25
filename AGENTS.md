@@ -14,9 +14,9 @@
 
 | 操作类型 | dispatch subagent | 禁止使用的工具 |
 |---------|-----------|---------------|
-| 浏览器操作 | @navigator | mcp__playwright__* |
+| 浏览器操作 | @navigator | browser-use, chrome命令 |
 | Chrome管理 | @navigator | browser-use, chrome命令 |
-| 表单处理 | @form | mcp__playwright__browser_type, mcp__playwright__browser_fill_form |
+| 表单处理 | @form | browser-use, chrome命令 |
 | 安全测试 | @security | mcp__burpbridge__* |
 | 账号解析 | @account_parser | 直接读取Excel |
 | 结果分析 | @analyzer | 无（纯分析Agent） |
@@ -199,8 +199,7 @@ browser-use doctor
 
 ```
 Priority 1: Browser Automation
-├─ browser-use CLI (Chrome CDP, 多实例管理) ← Navigator使用
-└─ Playwright MCP (备用，更灵活) ← 仅特殊情况下使用
+└─ browser-use CLI (Chrome CDP, 多实例管理) ← Navigator使用
 
 Priority 2: Security Testing
 ├─ BurpBridge MCP (请求同步、重放、认证上下文)
@@ -215,11 +214,11 @@ Priority 3: Data Management
 
 | Agent | 推荐工具 | 禁止工具 |
 |-------|---------|---------|
-| Navigator | browser-use CLI | 直接使用Playwright MCP（仅备用） |
-| Form | browser-use CLI | 直接操作浏览器 |
+| Navigator | browser-use CLI | browser-use, chrome命令 |
+| Form | browser-use CLI | 禁止直接操作浏览器 |
 | Security | BurpBridge MCP | — |
-| Analyzer | Read/Grep工具 | 执行任何操作（仅分析数据） |
-| Coordinator | `@` 调用 subagent | mcp__playwright__*, mcp__burpbridge__* |
+| Analyzer | Read/Grep工具 | 禁止执行任何操作（仅分析数据） |
+| Coordinator | `@` 调用 subagent | mcp__burpbridge__* |
 
 ---
 

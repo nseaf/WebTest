@@ -28,7 +28,6 @@ description: "认证上下文同步，Cookie同步到BurpBridge的方法论。Fo
 ┌─────────────────────────────────────────────────────────────┐
 │  2. 获取浏览器 Cookie                                         │
 │     browser-use cookies get --json                           │
-│     或 Playwright browser_context.cookies()                  │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ↓
@@ -41,7 +40,6 @@ description: "认证上下文同步，Cookie同步到BurpBridge的方法论。Fo
 ┌─────────────────────────────────────────────────────────────┐
 │  4. 同步到 BurpBridge                                         │
 │     mcp__burpbridge__configure_authentication_context        │
-│     或 mcp__burpbridge__import_playwright_cookies            │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ↓
@@ -123,26 +121,6 @@ browser-use --session {session_name} cookies get --json
 }
 ```
 
-### 方法2：Playwright MCP
-
-```javascript
-// 获取所有Cookie（Playwright格式）
-const cookies = await browser_context.cookies();
-
-// Playwright Cookie格式
-[
-  {
-    "name": "session",
-    "value": "abc123",
-    "domain": ".example.com",
-    "path": "/",
-    "expires": 1234567890,
-    "httpOnly": true,
-    "secure": true
-  }
-]
-```
-
 ---
 
 ## 同步到BurpBridge
@@ -162,19 +140,6 @@ async function syncCookiesToBurp(role, cookies, headers = {}) {
     role: role,
     headers: headers,
     cookies: cookieObj
-  });
-}
-```
-
-### 使用import_playwright_cookies（Playwright专用）
-
-```javascript
-// 从Playwright浏览器导入Cookie
-async function importPlaywrightCookies(role, cookies) {
-  await mcp__burpbridge__import_playwright_cookies(input: {
-    role: role,
-    cookies: cookies,  // Playwright格式
-    merge_with_existing: true
   });
 }
 ```

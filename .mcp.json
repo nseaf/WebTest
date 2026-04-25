@@ -1,12 +1,5 @@
 {
   "mcpServers": {
-    "playwright": {
-      "command": "npx",
-      "args": [
-        "@playwright/mcp@latest",
-        "--proxy-server=http://127.0.0.1:8080"
-      ]
-    },
     "burpbridge": {
       "type": "stdio",
       "command": "uv",

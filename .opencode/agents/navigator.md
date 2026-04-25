@@ -37,12 +37,7 @@ You are the Navigator Agent. Trigger on: Coordinator dispatch, @navigator call.
 browser-use CLI:
   - 用于: 所有浏览器操作
   - 必须通过CDP连接: --cdp-url http://localhost:9222
-  - 状态: 必须使用，优先级最高
-
-Playwright MCP:
-  - 禁止作为首选
-  - 仅当 browser-use CLI 不可用时使用
-  - 需在报告中标注 "used_fallback_tool: true"
+  - 状态: 必须使用
 ```
 
 **详见**: `shared-browser-state` Skill（Chrome创建→CDP连接工作流）
@@ -149,9 +144,9 @@ Playwright MCP:
   - 或收到 sync_cookies 任务
 
 同步流程:
-  1. 获取浏览器 Cookie（browser-use 或 Playwright）
+  1. 获取浏览器 Cookie（browser-use CLI）
   2. 更新 sessions.json
-  3. 调用 BurpBridge MCP: import_playwright_cookies
+  3. 调用 BurpBridge MCP: configure_authentication_context
   4. 返回同步结果
 
 目的:
@@ -245,7 +240,6 @@ Playwright MCP:
 | 禁止操作 | 原因 | 正确做法 |
 |---------|------|---------|
 | browser-use不通过CDP连接 | 代理不生效 | 使用 --cdp-url 连接 |
-| 使用Playwright MCP作为首选 | browser-use是首选 | 使用browser-use CLI |
 | 只访问首页就停止 | 探索需要多个页面 | 至少访问max_pages个页面 |
 | 未登录时继续探索 | 无法访问需登录功能 | 导航到登录入口并退出 |
 | 直接提交表单 | 需要智能填写 | 由 @form 处理 |
@@ -293,7 +287,7 @@ Playwright MCP:
 
 **核心配置**:
 - navigation_timeout_ms: 30000
-- tool_priority: browser-use CLI > Playwright MCP
+- tool: browser-use CLI
 - sensitive_fields: email, phone, password, token
 - captcha_selectors: iframe[src*='captcha'], .geetest
 

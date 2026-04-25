@@ -10,7 +10,7 @@
 
 ## Agent 清单 (1 Primary + 5 Subagents)
 
-| Agent | 模式 | 角色 |
+| Agent | mode | 角色 |
 |-------|------|------|
 | **Coordinator** | primary | 主控制器，工作流调度、状态管理 |
 | Navigator | subagent | 页面导航+分析（已合并Scout功能）|
@@ -19,14 +19,14 @@
 | Analyzer | subagent | 结果分析、漏洞判定、严重性评级 |
 | AccountParser | subagent | 账号文档解析、权限矩阵提取 |
 
-## 强制委派规则（核心）
+## 强制规则（核心）
 
-Coordinator 必须通过 `@{agent_name}` 调用 subagent。
+Coordinator 必须通过将对应工作交给 subagent 完成。Coordinator本身仅负责工作流调度、状态管理、异常处理、进度评估。
 
-| 操作类型 | 委派目标 | 禁止使用 |
+| 操作类型 | subagent | 禁止使用 |
 |---------|---------|---------|
-| 浏览器操作 | @navigator | mcp__playwright__* |
-| 表单处理 | @form | mcp__playwright__browser_type |
+| 浏览器操作 | @navigator | browser-use, chrome命令 |
+| 表单处理 | @form | browser-use, chrome命令 |
 | 安全测试 | @security | mcp__burpbridge__* |
 | 账号解析 | @account_parser | 直接读取Excel |
 | 结果分析 | @analyzer | — |

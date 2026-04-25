@@ -65,7 +65,7 @@ description: "流程审批操作记录方法论。审批执行流程、API_DISCO
 
 ## 执行审批操作
 
-使用 browser-use Skill 或 Playwright MCP 执行审批操作：
+使用 browser-use Skill 执行审批操作：
 
 ```javascript
 // 示例：执行审批提交

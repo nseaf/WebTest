@@ -65,7 +65,6 @@ Every finding MUST be based on actual data read via tools
 ✓ 必须来自browser-use实际输出
   - 使用 browser-use cookies get --json 获取实际Cookie
   - 从 sessions.json 读取已登录账号的Cookie
-  - 使用 Playwright browser_context.cookies()
 ```
 
 ### 4. 页面元素验证

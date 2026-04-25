@@ -23,9 +23,9 @@ permission:
 
 | 操作类型 | 必须由 subagent 完成 | 禁止使用的工具 |
 |---------|-----------|---------------|
-| 浏览器操作 | `@navigator` | mcp__playwright__* |
+| 浏览器操作 | `@navigator` | browser-use, chrome命令 |
 | Chrome管理 | `@navigator` | browser-use, chrome命令 |
-| 表单处理 | `@form` | mcp__playwright__browser_type, mcp__playwright__browser_fill_form |
+| 表单处理 | `@form` | browser-use, chrome命令 |
 | 安全测试 | `@security` | mcp__burpbridge__* |
 | 账号解析 | `@account_parser` | 直接读取Excel |
 | 结果分析 | `@analyzer` | 无（纯分析Agent） |
@@ -176,7 +176,7 @@ State: INIT
 │ │ ⚠️ 门控检查（必须输出）:                                 │
 │ │ [CHECK] 浏览器操作? YES → 必须委派                       │
 │ │ @navigator                                            │
-│ │ [FORBIDDEN] mcp__playwright__*, browser-use             │
+│ │ [FORBIDDEN] browser-use, chrome命令                     │
 │ ├────────────────────────────────────────────────────────┤
 │ │ 任务: create_instance                                   │
 │ │ 参数: account_id, cdp_port                              │
@@ -190,7 +190,7 @@ State: INIT
 │ │ ⚠️ 门控检查（必须输出）:                                 │
 │ │ [CHECK] 表单操作? YES → 必须委派                         │
 │ │ @form                                                 │
-│ │ [FORBIDDEN] mcp__playwright__browser_type, fill_form    │
+│ │ [FORBIDDEN] browser-use, chrome命令                     │
 │ ├────────────────────────────────────────────────────────┤
 │ │ 任务: execute_logins (批量登录)                          │
 │ │ 参数: account_ids (所有待登录账号), cdp_url              │
@@ -235,7 +235,7 @@ State: INIT
 State: EXPLORATION_RUNNING
 │ Loop:
 │   ├─ 1. `@navigator` explore
-│   │   ⚠️ `@navigator` | [FORBIDDEN] mcp__playwright__*
+│   │   ⚠️ `@navigator` | [FORBIDDEN] browser-use, chrome命令
 │   │   ├─ 任务: 探索页面（合并Scout功能）
 │   │   ├─ 参数: max_pages, max_depth, cdp_url
 │   │   ├─ 功能: 导航 + 页面分析 + API发现 + 记录

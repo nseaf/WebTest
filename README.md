@@ -43,8 +43,8 @@ Coordinator 必须通过 `@{agent_name}` 调用 subagent，禁止直接使用底
 
 | 操作类型 | 委派目标 | 禁止使用 |
 |---------|---------|---------|
-| 浏览器操作 | @navigator | mcp__playwright__* |
-| 表单处理 | @form | mcp__playwright__browser_type |
+| 浏览器操作 | @navigator | browser-use, chrome命令 |
+| 表单处理 | @form | browser-use, chrome命令 |
 | 安全测试 | @security | mcp__burpbridge__* |
 | 账号解析 | @account_parser | 直接读取Excel |
 | 结果分析 | @analyzer | — |
@@ -68,8 +68,7 @@ Skills 是可复用的方法论模块，位于 `.opencode/skills/`：
 | 组件 | 技术 | 说明 |
 |------|------|------|
 | **Agent框架** | Claude Code | 基于 Prompt 的角色扮演 |
-| **浏览器自动化** | browser-use CLI | 主要工具，支持多Chrome实例 |
-| **浏览器自动化(备用)** | Playwright MCP | 特殊场景使用 |
+| **浏览器自动化** | browser-use CLI | 支持多Chrome实例 |
 | **安全测试** | BurpBridge MCP | BurpSuite插件，请求重放 |
 | **数据存储** | MongoDB | BurpBridge依赖 |
 
