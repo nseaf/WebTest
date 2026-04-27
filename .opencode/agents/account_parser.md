@@ -240,7 +240,7 @@ Excel解析必须遵循以下流程:
 |-----------|----------|------|
 | Form Agent | `login_config` + 凭据 | 执行登录操作 |
 | Security Agent | `workflow_config` + `permission_matrix` | 越权测试 |
-| Scout Agent | `api_checklist` | API覆盖率统计 |
+| Navigator Agent | `api_checklist` | API覆盖率统计 |
 | Coordinator | 解析报告 | 规划测试策略 |
 
 ---
@@ -271,7 +271,7 @@ Excel解析必须遵循以下流程:
 AccountParser生成的`workflow_config.json`中的`api_endpoint`初始为`null`，通过实际操作发现：
 
 - Form Agent执行审批操作
-- Scout Agent监控网络请求
+- Navigator Agent记录页面中的接口线索
 - 更新`api_endpoint`字段
 
 ---

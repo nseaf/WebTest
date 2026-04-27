@@ -36,10 +36,10 @@ description: "实时数据库写入规范，防止数据丢失，解决并发写
 |------------|------|---------|-----------|
 | test_sessions | 测试会话 | Coordinator初始化 | Coordinator |
 | findings | 漏洞发现 | Security发现立即写入 | Security |
-| apis | API发现 | Scout发现立即写入 | Scout |
-| pages | 页面发现 | Scout分析后写入 | Scout |
+| apis | API发现 | Navigator发现立即写入 | Navigator |
+| pages | 页面发现 | Navigator分析后写入 | Navigator |
 | events | 事件队列 | 任意Agent创建事件 | 所有Agent |
-| progress | 测试进度 | 每个Agent完成任务后更新 | Scout/Security |
+| progress | 测试进度 | 每个Agent完成任务后更新 | Navigator/Security |
 
 ---
 
@@ -288,7 +288,7 @@ mongodb-mcp-server_insert-many({
     session_id: "session_20260422",
     event_id: "evt_001",
     event_type: "API_DISCOVERED",
-    source_agent: "Scout Agent",
+    source_agent: "Navigator Agent",
     priority: "normal",
     status: "pending",
     payload: { api_id: "api_001" },
@@ -380,7 +380,7 @@ mongodb-mcp-server_update-many({
 ```yaml
 ## Skill 加载规则（双通道）
 
-# Coordinator、Scout、Security 必须加载
+# Coordinator、Navigator、Security 必须加载
 
 1. 尝试: skill({ name: "mongodb-writer" })
 2. 若失败: Read("skills/data/mongodb-writer/SKILL.md")

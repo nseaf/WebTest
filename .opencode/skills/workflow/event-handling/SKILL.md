@@ -18,7 +18,7 @@ description: "事件处理规范，定义事件类型、优先级、处理流程
 | **LOGIN_FAILED** | Form | high | ❌ 否 | 登录失败，尝试其他账号 |
 | **COOKIE_CHANGED** | Navigator | normal | ❌ 否 | Cookie变化，同步到BurpBridge |
 | **VULNERABILITY_FOUND** | Security | high | ❌ 否 | 发现漏洞，记录到findings |
-| **API_DISCOVERED** | Scout | normal | ❌ 否 | 发现API，加入测试队列 |
+| **API_DISCOVERED** | Navigator | normal | ❌ 否 | 发现API，加入测试队列 |
 | **EXPLORATION_SUGGESTION** | Security/Analyzer | normal | ❌ 否 | 测试建议，加入待测试项 |
 | **BURPBRIDGE_ERROR** | Security | high | ❌ 否 | BurpBridge服务异常 |
 

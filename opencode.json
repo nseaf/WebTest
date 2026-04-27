@@ -37,6 +37,8 @@
         "bash": {
           "*": "ask",
           "browser-use *": "allow",
+          ".\\scripts\\browser-use-utf8.ps1 *": "allow",
+          "scripts/browser-use-utf8.ps1 *": "allow",
           "docker *": "allow",
           "curl *": "allow"
         },
@@ -46,7 +48,7 @@
       }
     },
     "navigator": {
-      "description": "Navigator Agent: Chrome管理、页面导航、页面分析、API发现、探索进度汇报。合并原Scout功能。",
+      "description": "Navigator Agent: 受管 Chrome 管理、页面导航、页面分析、API线索发现、Cookie同步与探索进度汇报。",
       "mode": "subagent",
       "temperature": 0.1,
       "prompt": "{file:.opencode/agents/navigator.md}",
@@ -59,7 +61,9 @@
       "permission": {
         "bash": {
           "*": "ask",
-          "browser-use *": "allow"
+          "browser-use *": "allow",
+          ".\\scripts\\browser-use-utf8.ps1 *": "allow",
+          "scripts/browser-use-utf8.ps1 *": "allow"
         },
         "skill": {
           "*": "allow"
@@ -67,7 +71,7 @@
       }
     },
     "form": {
-      "description": "Form Agent: 表单处理、登录执行、Cookie同步、验证码检测。",
+      "description": "Form Agent: 表单处理、登录执行、验证码检测。",
       "mode": "subagent",
       "temperature": 0.1,
       "prompt": "{file:.opencode/agents/form.md}",
@@ -80,7 +84,9 @@
       "permission": {
         "bash": {
           "*": "ask",
-          "browser-use *": "allow"
+          "browser-use *": "allow",
+          ".\\scripts\\browser-use-utf8.ps1 *": "allow",
+          "scripts/browser-use-utf8.ps1 *": "allow"
         },
         "skill": {
           "*": "allow"

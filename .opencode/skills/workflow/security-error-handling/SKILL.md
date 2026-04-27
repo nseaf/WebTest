@@ -97,7 +97,7 @@ description: "Security Agent错误处理方法论。BurpBridge调用失败处理
 当BurpBridge完全不可用时：
 
 1. **暂停越权测试**：无法获取历史记录和重放请求，跳过越权测试
-2. **继续页面探索**：Navigator、Scout、Form Agent继续工作
+2. **继续页面探索**：Navigator、Form Agent继续工作
 3. **手动测试建议**：创建EXPLORATION_SUGGESTION事件，建议用户手动测试
 4. **记录状态**：在会话状态中标记`security_testing_paused: true`
 

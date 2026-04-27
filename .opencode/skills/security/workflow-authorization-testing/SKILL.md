@@ -83,12 +83,12 @@ description: "流程审批越权测试方法论。请求重放测试、API发现
 
 ### 阶段1：API发现（自动记录）
 
-在正常审批流程执行时，Scout Agent自动记录API端点：
+在正常审批流程执行时，Navigator Agent记录页面侧 API 线索，并由 Security 结合 BurpBridge 历史确认端点：
 
 ```
 1. Navigator Agent按流程顺序操作
 2. Form Agent执行审批操作
-3. Scout Agent监控网络请求
+3. Navigator Agent记录页面中的接口线索
 4. 识别审批相关请求（POST/PUT）
 5. 关联到流程节点（通过菜单路径或请求内容）
 6. 更新workflow_config.json
@@ -99,7 +99,7 @@ description: "流程审批越权测试方法论。请求重放测试、API发现
 ```json
 {
   "event_type": "API_DISCOVERED",
-  "source_agent": "Scout Agent",
+  "source_agent": "Navigator Agent",
   "payload": {
     "api_url": "/api/workflow/terminate",
     "method": "POST",

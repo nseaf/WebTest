@@ -1,152 +1,100 @@
 ---
 name: page-analysis
-description: "页面分析方法论，Scout Agent使用。性能优化、元素分类、发现记录。"
+description: "页面分析方法论，Navigator Agent使用。基于 browser-use state/get html/eval 提取页面结构与交互线索。"
 ---
 
 # Page Analysis Skill
 
-> 页面分析方法论 — 快照获取、元素分类、API发现、性能优化
+> 页面分析关注真实可执行的 CLI 输出；不要引用不存在的 `browser_snapshot` 或 `browser_network_requests`。
 
----
+## 核心原则
+
+- 页面元素事实来源优先级：
+  - `browser-use state`
+  - `browser-use get html`
+  - `browser-use get title`
+  - `browser-use eval "js code"`
+  - `browser-use screenshot`
+- 发现 API 时，页面侧只能提供线索；可测试的 API 事实应以 BurpBridge 历史为准。
+- Navigator 负责页面分析，因为 Scout 已合并到 Navigator。
 
 ## 分析流程
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Scout Agent 页面分析流程                                     │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│  1. 获取CDP连接信息                                           │
-│     Read("result/sessions.json")                             │
-│     → cdp_url, browser_use_session                           │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│  2. 获取页面快照                                              │
-│     browser_snapshot(depth=2-3)                              │
-│     或 browser_snapshot(filename=".tmp/...")                 │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│  3. 解析Accessibility Tree                                    │
-│     - 提取链接列表                                            │
-│     - 提取表单列表                                            │
-│     - 提取按钮、输入框                                        │
-└─────────────────────────────────────────────────────────────┐
-                              │
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│  4. 分析网络请求                                              │
-│     browser_network_requests(static=false)                   │
-│     → 发现API端点                                            │
-└─────────────────────────────────────────────────────────────┐
-                              │
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│  5. 实时写入MongoDB                                           │
-│     apis collection                                           │
-│     pages collection                                          │
-└─────────────────────────────────────────────────────────────┐
-                              │
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│  6. 返回发现报告                                              │
-│     HEADER + TRANSFER BLOCK + AGENT_OUTPUT_END               │
-└─────────────────────────────────────────────────────────────┘
+1. 读取当前页面状态：
+
+```bash
+browser-use --session admin_001 state
+browser-use --session admin_001 get title
 ```
 
----
+2. 需要更多结构信息时读取 HTML：
 
-## 性能优化策略
-
-### 关键问题：MCP响应可能过大
-
-```
-browser_snapshot返回完整Accessibility Tree
-- 复杂页面可能产生50k+ tokens
-- 导致上下文溢出
-- Agent无法正常工作
+```bash
+browser-use --session admin_001 get html
 ```
 
-### 优化方法
+3. 需要精确读取当前 URL、表单数量或页面变量时使用 `eval`：
 
-#### 1. 使用depth参数限制深度
-
-```javascript
-// 仅获取前2-3层（足够发现主要元素）
-browser_snapshot({ depth: 2 })
-
-// depth建议值：
-// - depth=1: 仅页面根元素
-// - depth=2: 主要区块和表单（推荐）
-// - depth=3: 更详细的元素结构
-// - 无depth: 完整树（仅特殊需要时使用）
+```bash
+browser-use --session admin_001 eval "location.href"
+browser-use --session admin_001 eval "document.forms.length"
 ```
 
-#### 2. 使用filename参数保存到文件
+4. 记录链接、表单、按钮、潜在敏感功能入口。
+5. 将页面发现写入 `pages` collection，并为下一轮导航或安全测试生成建议。
 
-```javascript
-// 不返回到上下文，保存到临时文件
-browser_snapshot({ 
-  filename: ".tmp/snapshots/scout_20260422_page1.yaml" 
-})
+## 元素识别建议
 
-// 需要详细分析时再读取文件
-Read(".tmp/snapshots/scout_20260422_page1.yaml")
+从 `state` 中重点关注：
+
+- 登录入口
+- 个人中心、账户、用户管理
+- 设置、配置、审批、导出
+- 表格、列表、详情页入口
+- 提交按钮、搜索框、过滤器
+
+从 `get html` 或 `eval` 中补充：
+
+- 表单 `action`
+- 隐藏字段
+- 页面中的显式 API 路径、下载链接、审批节点标识
+
+## 推荐命令模式
+
+### Windows 文本读取
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session admin_001 state
 ```
 
-#### 3. 网络请求过滤
+### 结构补充
 
-```javascript
-// 排除静态资源
-browser_network_requests({
-  static: false,           // 不包含图片、CSS、JS等
-  requestBody: true,       // 包含请求体
-  requestHeaders: true     // 包含请求头
-})
-
-// 仅匹配API请求
-browser_network_requests({
-  static: false,
-  filter: "/api/.*"        // 正则过滤
-})
+```bash
+browser-use --session admin_001 get html
+browser-use --session admin_001 eval "Array.from(document.querySelectorAll('form')).map(f => ({ action: f.action, method: f.method }))"
 ```
 
----
+### 视觉确认
 
-## 元素分类规则
+```bash
+browser-use --session admin_001 screenshot
+```
 
-### 按交互类型分类
+## API 线索与边界
 
-| 类型 | Accessibility角色 | 说明 | 优先级 |
-|------|------------------|------|--------|
-| 按钮 | button | 可点击操作 | P2 |
-| 链接 | link | 导航链接 | P1 |
-| 输入框 | textbox | 文本输入 | P2 |
-| 表单 | form | 表单容器 | P1 |
-| 下拉框 | combobox | 选择框 | P2 |
-| 复选框 | checkbox | 多选框 | P3 |
+允许记录的页面侧 API 线索：
 
-### 按功能类型分类
+- 页面文本或 HTML 中直接出现的 `/api/...`、`/v1/...` 路径
+- 表单 `action`
+- 前端配置中的接口前缀
 
-| 功能类型 | 识别规则 | 优先级 |
-|---------|---------|--------|
-| 登录入口 | link[name~="登录"], link[href~="login"] | P1 |
-| 注册入口 | link[name~="注册"], link[href~="register"] | P1 |
-| 用户中心 | link[name~="个人"], link[href~="profile"] | P1 |
-| 管理入口 | link[name~="管理"], link[href~="admin"] | P1 |
-| 搜索功能 | textbox[placeholder~="搜索"], form[action~="search"] | P2 |
-| 数据列表 | grid, table, list | P2 |
+不允许把以下内容当作“已证实 API”：
 
----
+- 猜测的接口路径
+- 并未被 BurpBridge 捕获的网络请求
+- 来自伪工具输出的请求列表
 
-## 发现记录格式
-
-### 页面分析报告
+## 页面分析结果建议格式
 
 ```json
 {
@@ -155,130 +103,30 @@ browser_network_requests({
   "page_type": "dashboard",
   "links": [
     {
-      "url": "https://example.com/profile",
-      "text": "个人中心",
-      "priority": 1,
-      "visited": false
+      "label": "个人中心",
+      "interaction": "click index 5",
+      "priority": "high"
     }
   ],
   "forms": [
     {
-      "selector": "#search-form",
       "type": "search",
-      "fields_count": 1
+      "evidence": "state index 9"
     }
   ],
-  "apis_discovered": [
+  "api_hints": [
     {
-      "url": "/api/users/list",
-      "method": "GET",
-      "sensitive": false
+      "path": "/api/users/list",
+      "source": "page_html"
     }
-  ],
-  "recommendations": [
-    "发现个人中心链接，建议Navigator跟踪",
-    "发现用户列表API，建议Security测试IDOR"
   ]
 }
 ```
 
-### API发现记录
-
-```json
-{
-  "api_id": "api_001",
-  "url": "/api/users/123",
-  "method": "GET",
-  "pattern_detected": "/api/users/{id}",
-  "module": "user",
-  "sensitive_fields": ["email", "phone"],
-  "test_status": "discovered",
-  "source_page": "https://example.com/dashboard",
-  "discovered_at": Date.now()
-}
-```
-
----
-
-## 网络请求分析
-
-### API路径模式识别
-
-```javascript
-const apiPatterns = [
-  /^\/api\/[\w/-]+$/,           // /api/users, /api/users/123
-  /^\/v\d+\/[\w/-]+$/,          // /v1/users, /v2/posts
-  /^\/graphql$/,                // GraphQL端点
-  /^\/rest\/[\w/-]+$/,          // REST API
-  /^\/[\w/-]+\.(json|xml)$/     // JSON/XML响应
-];
-
-function isApiRequest(url) {
-  return apiPatterns.some(p => p.test(url.pathname));
-}
-```
-
-### 动态参数提取
-
-```javascript
-// /api/users/123 → {id: 123}
-// /api/posts/abc/comments → {id: abc}
-function extractParameters(url) {
-  const pathSegments = url.pathname.split('/');
-  const params = [];
-  
-  for (let i = 0; i < pathSegments.length; i++) {
-    const segment = pathSegments[i];
-    
-    // 数字ID
-    if (/^\d+$/.test(segment)) {
-      params.push({ name: "id", value: segment, location: "path" });
-    }
-    
-    // UUID
-    if (/^[a-f0-9-]{36}$/i.test(segment)) {
-      params.push({ name: "uuid", value: segment, location: "path" });
-    }
-  }
-  
-  return params;
-}
-```
-
-### 敏感数据检测
-
-```javascript
-const sensitiveKeywords = [
-  "password", "token", "secret", "api_key", "apikey",
-  "session", "auth", "credential", "private",
-  "email", "phone", "address", "ssn", "credit",
-  "user", "profile", "account", "setting"
-];
-
-function checkSensitiveData(responseBody) {
-  const found = [];
-  const bodyLower = responseBody.toLowerCase();
-  
-  for (const keyword of sensitiveKeywords) {
-    if (bodyLower.includes(keyword)) {
-      found.push(keyword);
-    }
-  }
-  
-  return found;
-}
-```
-
----
-
 ## 加载要求
 
 ```yaml
-## Skill 加载规则（双通道）
-
-# Scout 必须加载
-
 1. 尝试: skill({ name: "page-analysis" })
-2. 若失败: Read("skills/browser/page-analysis/SKILL.md")
-3. 此Skill必须加载完成才能继续执行
+2. 若失败: Read(".opencode/skills/browser/page-analysis/SKILL.md")
+3. 此 Skill 必须加载完成才能继续执行
 ```

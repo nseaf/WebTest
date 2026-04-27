@@ -102,12 +102,12 @@ COOKIE_SYNCED: {role}:{status}
 
 ```
 1. 定向获取
-   - browser_snapshot({ depth: 2-3 }) 限制深度
-   - browser_snapshot({ filename: ".tmp/snapshots/xxx.yaml" }) 保存到文件
+   - browser-use state 读取可交互元素
+   - browser-use get html 读取页面结构
    
 2. 网络请求过滤
-   - browser_network_requests({ static: false }) 排除静态资源
-   - browser_network_requests({ filter: "/api/*" }) 只匹配API
+   - 使用 BurpBridge 历史过滤 API 请求
+   - 页面侧只记录 API 线索，不伪造请求列表
    
 3. 提前终止
    - 同类型发现≥5个时合并描述
@@ -140,7 +140,7 @@ COOKIE_SYNCED: {role}:{status}
 ```
 Q1: 有未访问的重要路径？
     - 检查 progress.pending APIs
-    - 检查 Scout 发现的新链接
+    - 检查 Navigator 发现的新链接
     - 有敏感API未测试 → YES = NEXT_ROUND
     
 Q2: 关键端点是否都测试了？
@@ -156,7 +156,7 @@ Q3: 发现的漏洞是否可能组合攻击？
 
 ## 各Agent的合约模板
 
-### Scout Agent合约
+### Navigator 页面分析合约
 
 ```
 ---Agent Contract---
@@ -212,7 +212,7 @@ Q3: 发现的漏洞是否可能组合攻击？
 ```yaml
 ## Skill 加载规则（双通道）
 
-# Coordinator、Navigator、Scout、Form、Security、Analyzer 必须加载
+# Coordinator、Navigator、Form、Security、Analyzer 必须加载
 
 1. 尝试: skill({ name: "agent-contract" })
 2. 若失败: Read("skills/core/agent-contract/SKILL.md")

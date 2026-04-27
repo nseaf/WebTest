@@ -1,244 +1,63 @@
 ---
 name: auth-context-sync
-description: "认证上下文同步，Cookie同步到BurpBridge的方法论。Form Agent登录后同步，Security Agent测试时使用。"
+description: "认证上下文同步。Navigator 将真实 Cookie 同步到 BurpBridge，Security 使用该上下文进行测试。"
 ---
 
 # Auth Context Sync Skill
 
-> 认证上下文同步 — Cookie获取、同步到BurpBridge、角色管理
+> 认证上下文必须来自真实登录会话，不得猜测或伪造。
 
----
+## 职责边界
 
-## 核心流程
+- Form：执行登录并返回结果
+- Navigator：读取 Cookie、更新 `sessions.json`、同步到 BurpBridge
+- Security：消费该认证上下文进行重放与越权测试
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  认证上下文同步流程                                            │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│  1. Form Agent 执行登录                                       │
-│     - 填写表单                                               │
-│     - 提交登录                                               │
-│     - 等待登录成功                                           │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│  2. 获取浏览器 Cookie                                         │
-│     browser-use cookies get --json                           │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│  3. 更新 result/sessions.json                                │
-│     auth_context.cookies = {session: xxx, token: yyy}        │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│  4. 同步到 BurpBridge                                         │
-│     mcp__burpbridge__configure_authentication_context        │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│  5. Security Agent 可使用该角色认证进行重放测试                 │
-│     replay_http_request_as_role(role: "admin")               │
-└─────────────────────────────────────────────────────────────┘
-```
+## 同步流程
 
----
-
-## BurpBridge MCP调用规范
-
-### 重要：必须使用input参数包装
-
-```javascript
-// ✓ 正确调用方式
-mcp__burpbridge__configure_authentication_context(input: {
-  role: "admin",
-  headers: {
-    "Authorization": "Bearer admin_token_xxx"
-  },
-  cookies: {
-    "session": "admin_session_abc",
-    "token": "admin_token_def"
-  }
-})
-
-// ✗ 错误调用方式
-mcp__burpbridge__configure_authentication_context({ role: "admin" })
-// 缺少input包装，会导致调用失败
-```
-
-### 其他正确调用示例
-
-```javascript
-// 无参数工具
-mcp__burpbridge__list_configured_roles(input: {})
-
-// 带参数工具
-mcp__burpbridge__sync_proxy_history_with_filters(input: {
-  host: "www.example.com",
-  require_response: true
-})
-
-mcp__burpbridge__replay_http_request_as_role(input: {
-  history_entry_id: "65f1a2b3c4d5e6f7",
-  target_role: "guest"
-})
-```
-
----
-
-## Cookie获取方法
-
-### 方法1：browser-use CLI
+1. Form 完成登录并报告成功账号。
+2. Navigator 对对应 session 执行：
 
 ```bash
-# 获取Cookie（JSON格式）
-browser-use --session {session_name} cookies get --json
-
-# 输出格式
-{
-  "cookies": [
-    {
-      "name": "session",
-      "value": "abc123",
-      "domain": ".example.com",
-      "path": "/",
-      "expires": 1234567890
-    },
-    {
-      "name": "token",
-      "value": "xyz789",
-      "domain": ".example.com",
-      "path": "/"
-    }
-  ]
-}
+browser-use --session admin_001 cookies get --json
 ```
 
----
+Windows 建议：
 
-## 同步到BurpBridge
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session admin_001 cookies get --json
+```
 
-### 使用configure_authentication_context
+3. Navigator 更新 `result/sessions.json` 中该账号的 `auth_context`。
+4. Navigator 调用 BurpBridge：
 
 ```javascript
-// 将Cookie同步到BurpBridge角色配置
-async function syncCookiesToBurp(role, cookies, headers = {}) {
-  // 转换Cookie格式为对象
-  const cookieObj = {};
-  for (const cookie of cookies) {
-    cookieObj[cookie.name] = cookie.value;
+mcp__burpbridge__configure_authentication_context(input: {
+  role: "admin",
+  headers: {},
+  cookies: {
+    session: "admin_session_abc",
+    token: "admin_token_def"
   }
-  
-  await mcp__burpbridge__configure_authentication_context(input: {
-    role: role,
-    headers: headers,
-    cookies: cookieObj
-  });
-}
+})
 ```
 
----
+## 规则
+
+- 所有 BurpBridge MCP 调用必须使用 `input` 包装。
+- Cookie 值必须来自 `browser-use cookies get --json` 的真实输出。
+- 若页面登录成功但 Cookie 未变化，也应记录该状态，不要伪造字段。
 
 ## 角色管理
 
-### 列出已配置角色
-
 ```javascript
-const roles = await mcp__burpbridge__list_configured_roles(input: {});
-// 返回: { status: "ok", roles: ["admin", "user", "guest"] }
+mcp__burpbridge__list_configured_roles(input: {})
 ```
-
-### 删除角色配置
-
-```javascript
-await mcp__burpbridge__delete_authentication_context(input: {
-  role: "guest"
-});
-```
-
----
-
-## 完整同步示例
-
-### Form Agent登录后同步
-
-```javascript
-// Form Agent执行登录后的完整流程
-async function loginAndSync(account_id, role) {
-  // 1. 执行登录
-  await browser-use_form_submit(session_name, account_id);
-  
-  // 2. 验证登录成功
-  const loginStatus = await checkLoginSuccess(session_name);
-  if (!loginStatus) {
-    throw new Error("登录失败");
-  }
-  
-  // 3. 获取Cookie
-  const cookies = await browser-use_cookies_get(session_name);
-  
-  // 4. 更新sessions.json
-  const sessions = readJson("result/sessions.json");
-  const session = sessions.sessions.find(s => s.account_id === account_id);
-  session.auth_context = {
-    headers: {},
-    cookies: cookies
-  };
-  session.status = "active";
-  session.logged_in_at = Date.now();
-  writeJson("result/sessions.json", sessions);
-  
-  // 5. 同步到BurpBridge
-  await mcp__burpbridge__configure_authentication_context(input: {
-    role: role,
-    cookies: cookies
-  });
-  
-  // 6. 创建事件通知
-  createEvent("COOKIE_SYNCED", {
-    priority: "normal",
-    payload: { account_id, role }
-  });
-}
-```
-
----
-
-## Headers同步（可选）
-
-除了Cookie，还可以同步Headers：
-
-```javascript
-// 同步Authorization Header
-await mcp__burpbridge__configure_authentication_context(input: {
-  role: "admin",
-  headers: {
-    "Authorization": "Bearer eyJhbGciOiJIUzI1NiIs...",
-    "X-Auth-Token": "admin_token_xxx"
-  },
-  cookies: {
-    "session": "admin_session_abc"
-  }
-});
-```
-
----
 
 ## 加载要求
 
 ```yaml
-## Skill 加载规则（双通道）
-
-# Form、Security 必须加载
-
 1. 尝试: skill({ name: "auth-context-sync" })
-2. 若失败: Read("skills/security/auth-context-sync/SKILL.md")
-3. 此Skill必须加载完成才能继续执行
+2. 若失败: Read(".opencode/skills/security/auth-context-sync/SKILL.md")
+3. Navigator、Security 必须加载此 Skill
 ```

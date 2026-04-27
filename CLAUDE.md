@@ -125,9 +125,15 @@ WebTest/
 
 通过 `/browser-use` Skill 调用 browser-use CLI：
 
-```bash
-browser-use --session admin_001 --cdp-url http://localhost:9222 open https://example.com
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session admin_001 state
 ```
+
+项目约束说明：
+
+- `browser-use` 命令语义以官方 skill 为准
+- 本项目通常由 Navigator 先启动带代理的受管 Chrome，再按项目方式接入 session
+- `--cdp-url` 属于项目接入方式，不应写成 `browser-use` 的通用前提
 
 ### 核心命令
 

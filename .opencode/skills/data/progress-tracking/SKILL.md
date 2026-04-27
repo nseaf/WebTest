@@ -134,7 +134,7 @@ discovered → pending → testing → tested → analyzed → skipped
 
 | 状态 | 说明 | 触发条件 | 下一步 |
 |------|------|---------|--------|
-| **discovered** | 新发现，未加入测试队列 | Scout发现API | 加入pending队列 |
+| **discovered** | 新发现，未加入测试队列 | Navigator发现API | 加入pending队列 |
 | **pending** | 在测试队列中等待 | Coordinator分配任务 | Security开始测试 |
 | **testing** | 正在测试 | Security执行重放 | 等待测试完成 |
 | **tested** | 测试完成，等待分析 | Security完成重放 | Analyzer分析 |

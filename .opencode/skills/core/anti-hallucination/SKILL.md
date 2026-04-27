@@ -37,7 +37,7 @@ Every finding MUST be based on actual data read via tools
   - 不要基于"常见模式"推断API
   
 ✓ 必须来自实际网络请求
-  - 使用 browser_network_requests 获取实际请求
+- 优先使用 BurpBridge list_paginated_http_history 获取实际请求
   - 使用 BurpBridge list_paginated_http_history 查询历史
   - 记录实际的URL和参数
 ```
@@ -74,9 +74,10 @@ Every finding MUST be based on actual data read via tools
   - 不要假设有登录表单
   - 不要假设有特定按钮
   
-✓ 必须来自browser_snapshot实际输出
-  - 使用 browser_snapshot 获取Accessibility Tree
-  - 元素必须存在于实际快照中
+✓ 必须来自实际页面输出
+  - 使用 browser-use state 获取可交互元素
+  - 使用 browser-use get html 或 eval 补充结构证据
+  - 元素必须存在于真实输出中
   - selector必须匹配实际元素
 ```
 
@@ -120,7 +121,7 @@ Every finding MUST be based on actual data read via tools
 
 ```
 ✓ 正确示例（API发现）：
-1. 使用 browser_network_requests 获取实际请求
+1. 使用 BurpBridge 历史查询实际请求
 2. 过滤出 /api/* 路径的请求
 3. 记录实际的API端点（如 /api/products/list）
 4. 只有实际发现的API才进行测试
@@ -148,8 +149,8 @@ Every finding MUST be based on actual data read via tools
 
 | Agent | 验证项 |
 |-------|--------|
-| Scout | API端点来自browser_network_requests |
-| Form | 表单元素来自browser_snapshot |
+| Navigator | API端点来自BurpBridge历史或页面侧真实线索 |
+| Form | 表单元素来自browser-use state / get html |
 | Security | history_entry_id来自BurpBridge查询 |
 | Security | replay_id来自实际重放结果 |
 | Analyzer | 漏洞判定基于get_replay_scan_result |

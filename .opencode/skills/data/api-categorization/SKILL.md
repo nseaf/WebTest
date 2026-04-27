@@ -265,7 +265,7 @@ async function updateProgressWithApi(api) {
 ```yaml
 ## Skill 加载规则（双通道）
 
-# Scout、Security 必须加载
+# Navigator、Security 必须加载
 
 1. 尝试: skill({ name: "api-categorization" })
 2. 若失败: Read("skills/data/api-categorization/SKILL.md")

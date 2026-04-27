@@ -294,7 +294,7 @@ State: EXPLORATION_RUNNING
 │ Loop:
 │   ├─ 1. `@navigator` explore
 │   │   ⚠️ `@navigator`
-│   │   ├─ 任务: 探索页面（合并Scout功能）
+│   │   ├─ 任务: 探索页面（Navigator 内含页面分析与 API 线索发现）
 │   │   ├─ 参数: max_pages, max_depth, cdp_url
 │   │   ├─ 功能: 导航 + 页面分析 + API发现 + 记录
 │   │   ├─ 输出: 发现报告、异常情况、下一步建议
@@ -402,7 +402,7 @@ State: REPORT
 │   └─ 测试建议
 │
 │ 3. `@navigator` close_instance
-│   ├─ 任务: 关闭所有Chrome实例
+│   ├─ 任务: 关闭所有受管 Chrome 实例
 │   ├─ 清理资源
 │   └─ 输出: 关闭确认
 │

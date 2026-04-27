@@ -31,8 +31,8 @@
 | Agent | 模式 | 角色 |
 |-------|------|------|
 | **Coordinator** | primary | 主控制器，工作流调度、状态管理、异常处理 |
-| Navigator | subagent | 页面导航、页面分析、API发现（已合并Scout）|
-| Form | subagent | 表单识别、登录执行、Cookie同步 |
+| Navigator | subagent | 页面导航、页面分析、API发现与 Cookie 同步（已合并Scout）|
+| Form | subagent | 表单识别、登录执行、验证码处理 |
 | Security | subagent | IDOR测试、注入测试、BurpBridge集成 |
 | Analyzer | subagent | 重放结果分析、漏洞判定、严重性评级 |
 | AccountParser | subagent | 账号文档解析、权限矩阵提取、流程配置生成 |
