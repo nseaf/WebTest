@@ -32,7 +32,7 @@
           "security": "allow",
           "analyzer": "allow",
           "account_parser": "allow",
-          "*": "deny"
+          "*": "allow"
         },
         "bash": {
           "*": "ask",

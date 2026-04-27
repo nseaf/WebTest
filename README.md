@@ -41,12 +41,12 @@
 
 Coordinator 必须通过 `@{agent_name}` 调用 subagent，禁止直接使用底层工具。
 
-| 操作类型 | 委派目标 | 禁止使用 |
+| 操作类型 | 委派目标 | 要求 |
 |---------|---------|---------|
-| 浏览器操作 | @navigator | browser-use, chrome命令 |
-| 表单处理 | @form | browser-use, chrome命令 |
+| 浏览器操作 | @navigator | 使用browser-use cli + skill, chrome命令 |
+| 表单处理 | @form | 使用browser-use cli + skill |
 | 安全测试 | @security | mcp__burpbridge__* |
-| 账号解析 | @account_parser | 直接读取Excel |
+| 账号解析 | @account_parser | 禁止直接读取excel |
 | 结果分析 | @analyzer | — |
 
 详见 **AGENTS.md** 的 MANDATORY DELEGATION RULES 章节。

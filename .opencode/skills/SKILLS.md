@@ -142,18 +142,6 @@
 | 状态管理规则 | Skill文件 |
 | 输出格式规范 | Skill文件 |
 
----
-
-## 参考opencode-agents
-
-此Skills体系借鉴了opencode-agents项目的设计：
-
-| opencode-agents | WebTest |
-|-----------------|---------|
-| agent-contract | agent-contract（输出格式、截断检测） |
-| anti-hallucination | anti-hallucination（防幻觉规则） |
-| coverage-matrix | progress-tracking（进度控制） |
-| sink-chain-methodology | idor-testing（越权测试方法论） |
 
 ---
 

@@ -23,12 +23,12 @@
 
 Coordinator 必须通过将对应工作交给 subagent 完成。Coordinator本身仅负责工作流调度、状态管理、异常处理、进度评估。
 
-| 操作类型 | subagent | 禁止使用 |
+| 操作类型 | subagent | 要求 |
 |---------|---------|---------|
-| 浏览器操作 | @navigator | browser-use, chrome命令 |
-| 表单处理 | @form | browser-use, chrome命令 |
-| 安全测试 | @security | mcp__burpbridge__* |
-| 账号解析 | @account_parser | 直接读取Excel |
+| 浏览器操作 | @navigator | 使用browser-use cli + skill, chrome命令 |
+| 表单处理 | @form | 使用browser-use cli + skill, chrome命令 |
+| 安全测试 | @security | 使用 mcp__burpbridge__* |
+| 账号解析 | @account_parser | 禁止直接读取Excel |
 | 结果分析 | @analyzer | — |
 
 ## Skills 系统

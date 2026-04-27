@@ -12,13 +12,13 @@
 
 ### 操作-委派映射表
 
-| 操作类型 | dispatch subagent | 禁止使用的工具 |
+| 操作类型 | dispatch subagent | 要求 |
 |---------|-----------|---------------|
-| 浏览器操作 | @navigator | browser-use, chrome命令 |
-| Chrome管理 | @navigator | browser-use, chrome命令 |
-| 表单处理 | @form | browser-use, chrome命令 |
+| 浏览器操作 | @navigator | 使用browser-use cli + skill, chrome命令 |
+| Chrome管理 | @navigator | 使用 chrome 命令管理和维护浏览器实例 |
+| 表单处理 | @form | 使用browser-use |
 | 安全测试 | @security | mcp__burpbridge__* |
-| 账号解析 | @account_parser | 直接读取Excel |
+| 账号解析 | @account_parser | 禁止直接读取Excel |
 | 结果分析 | @analyzer | 无（纯分析Agent） |
 
 ### 前置输出验证（强制执行）
@@ -212,13 +212,13 @@ Priority 3: Data Management
 
 ### 工具使用约束
 
-| Agent | 推荐工具 | 禁止工具 |
+| Agent | 推荐工具 | 要求 |
 |-------|---------|---------|
-| Navigator | browser-use CLI | browser-use, chrome命令 |
-| Form | browser-use CLI | 禁止直接操作浏览器 |
+| Navigator | browser-use CLI | 使用browser-use cli + skill, chrome命令 |
+| Form | browser-use CLI | 使用browser-use cli + skill |
 | Security | BurpBridge MCP | — |
 | Analyzer | Read/Grep工具 | 禁止执行任何操作（仅分析数据） |
-| Coordinator | `@` 调用 subagent | mcp__burpbridge__* |
+| Coordinator | `@` 调用 subagent | 禁止直接使用 mcp__burpbridge__* |
 
 ---
 

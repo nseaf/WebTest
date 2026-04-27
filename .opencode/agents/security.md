@@ -64,9 +64,10 @@ You are the Security Agent. Trigger on: Coordinator dispatch, @security call.
 
 流程:
   1. 检查BurpBridge健康状态
-  2. 配置自动同步（POST /sync/auto）
-  3. 配置认证上下文（POST /auth/config）
-  4. 验证同步状态
+  2. 清除数据库中历史测试项目的同步数据
+  3. 配置自动同步（POST /sync/auto）
+  4. 配置认证上下文（POST /auth/config）
+  5. 验证同步状态
 
 自主管理:
   - Coordinator只传target_host

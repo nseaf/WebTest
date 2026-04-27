@@ -21,13 +21,13 @@ AI-Agent Web渗透测试系统，采用 **Coordinator + Subagent + Skill** 三�
 
 Coordinator 必须使用 `@{agent_name}` 调用 subagent，禁止直接使用底层工具。
 
-| 操作类型 | subagent | 禁止使用 |
+| 操作类型 | subagent | 要求 |
 |---------|---------|---------|
-| 浏览器操作 | @navigator | browser-use, chrome命令 |
-| Chrome管理 | @navigator | browser-use, chrome命令 |
-| 表单处理 | @form | browser-use, chrome命令 |
-| 安全测试 | @security | mcp__burpbridge__* |
-| 账号解析 | @account_parser | 直接读取Excel |
+| 浏览器操作 | @navigator | 使用browser-use cli + skill, chrome命令 |
+| Chrome管理 | @navigator | 使用browser-use cli + skill, chrome命令 |
+| 表单处理 | @form | 使用browser-use cli + skill |
+| 安全测试 | @security | 使用mcp__burpbridge__* |
+| 账号解析 | @account_parser | 禁止直接读取Excel |
 | 结果分析 | @analyzer | — |
 
 详见 **AGENTS.md** 的 MANDATORY DELEGATION RULES 章节。
@@ -197,7 +197,7 @@ mcp__burpbridge__replay_http_request_as_role(input: {"history_entry_id": "xxx", 
    - 重放请求并分析响应差异
 
 2. **注入测试**
-   - 通过 browser-use 在表单中提交 payload
+   - 通过重放请求在表单中注入payload
    - 观察响应判断是否存在漏洞
 
 ## 流程审批测试指南
