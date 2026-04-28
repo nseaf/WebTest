@@ -1,11 +1,12 @@
 {
   "$schema": "events_schema",
   "description": "Agent间通信事件队列",
+  "allowed_hosts": [],
   "events": [],
   "event_schema": {
     "event_id": "evt_YYYYMMDD_HHMMSS_XXX",
-    "event_type": "CAPTCHA_DETECTED|SESSION_EXPIRED|LOGIN_FAILED|EXPLORATION_SUGGESTION|VULNERABILITY_FOUND|API_DISCOVERED|FORM_SUBMISSION_ERROR",
-    "source_agent": "Coordinator|Navigator|Scout|Form|Security|Analyzer",
+    "event_type": "CAPTCHA_DETECTED|SESSION_EXPIRED|LOGIN_FAILED|EXPLORATION_SUGGESTION|VULNERABILITY_FOUND|API_DISCOVERED|FORM_SUBMISSION_ERROR|EXTERNAL_DOMAIN_SKIPPED|ACCESS_SCOPE_BLOCKED|SURVEY_GAP_DETECTED|RECOVERY_ATTEMPTED",
+    "source_agent": "Coordinator|Navigator|Form|Security|Analyzer",
     "priority": "critical|high|normal",
     "status": "pending|processing|handled|failed",
     "payload": {},

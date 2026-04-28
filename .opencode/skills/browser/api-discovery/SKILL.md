@@ -1,6 +1,6 @@
 ---
 name: api-discovery
-description: "API发现方法论。以 BurpBridge 历史为主来源，页面分析线索为辅。"
+description: "API 发现方法论。以 BurpBridge 历史为主来源，页面分析线索为辅，并同步输出 confirmed_apis 与 api_hints。"
 ---
 
 # API Discovery Skill
@@ -12,6 +12,9 @@ description: "API发现方法论。以 BurpBridge 历史为主来源，页面分
 - 不使用不存在的 `browser_network_requests`。
 - 页面侧只提供 API 线索，不提供“已证实请求”。
 - 真正进入测试队列的 API，必须来自 BurpBridge 历史、重放记录或已保存的真实请求详情。
+- `Navigator` 输出中必须区分：
+  - `site_map_report.confirmed_apis`
+  - `site_map_report.api_hints`
 
 ## 发现来源优先级
 
@@ -30,14 +33,30 @@ browser-use --session admin_001 eval "Array.from(document.querySelectorAll('form
 ```
 
 可以记录为：
-
 - `/api/...`
 - `/v1/...`
 - `/workflow/...`
 - `/approval/...`
 - `/export/...`
 
-但这些线索在进入 `apis` collection 前，最好先由 Security 结合 BurpBridge 历史确认。
+这些只能进入 `api_hints`，不能直接写成 `confirmed_apis`。
+
+## 输出边界
+
+### `confirmed_apis`
+
+必须满足以下任一条件：
+- 已在 BurpBridge 历史中出现
+- 已存在真实请求详情
+- 已有安全测试或重放记录可引用
+
+### `api_hints`
+
+适用于以下场景：
+- 页面文本直接出现接口路径
+- HTML 中出现表单 `action`
+- 前端配置中出现 API 前缀
+- 由页面结构推导出的待验证入口
 
 ## 常见 API 模式
 
@@ -59,19 +78,10 @@ browser-use --session admin_001 eval "Array.from(document.querySelectorAll('form
 - `auth`: `/api/auth`, `/api/login`, `/api/token`, `/api/session`
 - `data`: `/api/data`, `/api/export`, `/api/import`, `/api/report`
 
-## 敏感字段判断
-
-高优先级关键词：
-
-- 身份信息：`email`, `phone`, `username`, `address`
-- 权限信息：`role`, `permissions`, `is_admin`
-- 归属信息：`owner_id`, `user_id`, `created_by`
-- 内部信息：`config`, `secret`, `api_key`, `salary`
-- 凭证信息：`password`, `token`, `session`, `auth`
-
 ## 写入建议
 
-发现 API 后应尽快写入 `apis` collection，并同步更新 `progress`。
+- `confirmed_apis` 应尽快写入 `apis` collection，并同步更新 `progress`
+- `api_hints` 应写入 `site_survey.json` 或 Navigator 返回结果，等待后续验证
 
 事件示例：
 
@@ -84,7 +94,8 @@ browser-use --session admin_001 eval "Array.from(document.querySelectorAll('form
     "endpoint": "/api/users/123",
     "method": "GET",
     "module": "user",
-    "evidence_source": "burp_history"
+    "evidence_source": "burp_history",
+    "target_field": "confirmed_apis"
   }
 }
 ```
@@ -99,5 +110,5 @@ browser-use --session admin_001 eval "Array.from(document.querySelectorAll('form
 ```yaml
 1. 尝试: skill({ name: "api-discovery" })
 2. 若失败: Read(".opencode/skills/browser/api-discovery/SKILL.md")
-3. 此 Skill 必须加载完成才能继续执行
+3. Navigator 必须加载本 Skill
 ```

@@ -1,6 +1,6 @@
 ---
 name: browser-recovery
-description: "项目级浏览器恢复规则：session 配置冲突、tab 偏移、DOM 变更、空白页、登录回跳、modal 阻断与验证码中断。"
+description: "项目级浏览器恢复规则：session 配置冲突、tab 偏移、DOM 变更、空白页、登录回跳、modal 阻断、外域跳转与测绘权限阻断。"
 ---
 
 # Browser Recovery Skill
@@ -13,34 +13,18 @@ description: "项目级浏览器恢复规则：session 配置冲突、tab 偏移
 - 优先小范围恢复，不扩大为“关闭所有实例”
 - 能在当前 session/tab 内恢复就不要重建实例
 - 恢复后必须重新验证 URL、title、state 和 tab 状态
+- 默认最多尝试两轮本地恢复；第二轮失败再升级
 
 ## 恢复矩阵
 
 ### 1. `SESSION_CONFIG_CONFLICT`
 
-症状：
-
-- `browser-use` 提示 session 已存在但配置不同
-
-处理：
-
 1. 确认是否为已 attach session
-2. 将当前命令降级为 `attach_mode=reuse`
+2. 降级为 `attach_mode=reuse`
 3. 忽略重复传入的 `--cdp-url`
-4. 重新执行原命令
-
-上报条件：
-
-- 忽略 `--cdp-url` 后仍失败
+4. 重试原命令
 
 ### 2. `NEW_TAB_OPENED`
-
-症状：
-
-- 点击后 URL 未变
-- `tab list` 显示新增 tab 或活动 tab 改变
-
-处理：
 
 1. 执行 `tab list`
 2. 切到新 tab 或最匹配目标的 tab
@@ -49,13 +33,6 @@ description: "项目级浏览器恢复规则：session 配置冲突、tab 偏移
 
 ### 3. `DOM_CHANGED_WITHOUT_URL_CHANGE`
 
-症状：
-
-- URL 不变
-- 但 title、主要按钮、表单数量或页面结构发生变化
-
-处理：
-
 1. 重新获取 `state`
 2. 读取 `get title`
 3. 必要时 `get html`
@@ -63,66 +40,54 @@ description: "项目级浏览器恢复规则：session 配置冲突、tab 偏移
 
 ### 4. `PAGE_BLANK_OR_TIMEOUT`
 
-症状：
-
-- 页面空白
-- `state` 无有效元素
-- 长时间未出现预期内容
-
-处理：
-
 1. 再次读取 `state`
 2. `get title`
-3. 尝试 `open 当前URL` 或返回入口 URL
-4. 若仍失败，标记 `PAGE_LOAD_FAILED`
+3. 尝试 `open 当前 URL` 或回到入口 URL
+4. 仍失败则标记 `PAGE_LOAD_FAILED`
 
 ### 5. `REDIRECTED_TO_LOGIN`
 
-症状：
-
-- 操作中被重定向回登录页
-
-处理：
-
 1. 验证 session 是否过期
-2. 通知 Form 用当前 `session_name` 执行重新登录
+2. 通知 Form 用当前 `session_name` 重新登录
 3. 恢复后回到中断前 URL 或 `pending_urls`
 
 ### 6. `MODAL_BLOCKING_FLOW`
 
-症状：
-
-- modal/popup 覆盖页面，导致无法点击或输入
-
-处理：
-
-1. 通过 `state` 识别关闭按钮、取消按钮、遮罩层交互点
+1. 通过 `state` 识别关闭/取消/遮罩层交互点
 2. 优先关闭 modal
-3. 再重新执行上一步动作
+3. 重新执行上一步动作
 
-### 7. `CAPTCHA_DETECTED`
+### 7. `EXTERNAL_DOMAIN_SKIPPED`
 
-症状：
+1. 记录外域 URL、来源页面、来源入口
+2. 若为新 tab，关闭该 tab 并切回上一安全 tab
+3. 若为当前 tab，回到上一安全 URL 或入口 URL
+4. 标记该入口为“已检查但外域跳转”
+5. 生成 `EXTERNAL_DOMAIN_SKIPPED` 事件
 
-- 页面出现验证码组件、滑块、iframe 或相关文本
+### 8. `ACCESS_SCOPE_BLOCKED`
 
-处理：
+1. 记录当前角色、模块、入口、阻断证据
+2. 不重试同一入口超过两次
+3. 如其他角色未验证，建议 `verify_role_access`
+4. 生成 `ACCESS_SCOPE_BLOCKED` 或 `SURVEY_GAP_DETECTED`
+
+### 9. `CAPTCHA_DETECTED`
 
 1. 记录验证码类型与 URL
 2. Navigator/Form 停止自动提交
-3. 若是批量登录，继续尝试其他账号
+3. 批量登录场景继续处理其他账号
 4. 最终汇总给 Coordinator
 
 ## 恢复结果记录
 
-恢复后必须记录：
-
 ```json
 {
-  "issue": "NEW_TAB_OPENED",
-  "action": "tab switch 1",
+  "issue": "EXTERNAL_DOMAIN_SKIPPED",
+  "attempt": 1,
+  "action": "tab close + tab switch 0",
   "result": "recovered",
-  "verified_url": "https://example.com/profile"
+  "verified_url": "https://example.com/dashboard"
 }
 ```
 

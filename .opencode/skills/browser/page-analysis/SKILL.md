@@ -1,6 +1,6 @@
 ---
 name: page-analysis
-description: "页面分析方法论，Navigator Agent使用。基于 browser-use state/get html/eval 提取页面结构与交互线索。"
+description: "页面分析方法论，Navigator Agent 使用。基于 browser-use state/get html/eval 提取页面结构、模块线索、角色可达性与 API 线索。"
 ---
 
 # Page Analysis Skill
@@ -15,8 +15,8 @@ description: "页面分析方法论，Navigator Agent使用。基于 browser-use
   - `browser-use get title`
   - `browser-use eval "js code"`
   - `browser-use screenshot`
-- 发现 API 时，页面侧只能提供线索；可测试的 API 事实应以 BurpBridge 历史为准。
-- Navigator 负责页面分析，因为 Scout 已合并到 Navigator。
+- 页面侧只能提供 API 线索；可测试的 API 事实仍以 BurpBridge 历史为准。
+- 测绘阶段必须输出模块、子模块、入口和角色可达性，而不只是页面列表。
 
 ## 分析流程
 
@@ -25,6 +25,7 @@ description: "页面分析方法论，Navigator Agent使用。基于 browser-use
 ```bash
 browser-use --session admin_001 state
 browser-use --session admin_001 get title
+browser-use --session admin_001 eval "location.href"
 ```
 
 2. 需要更多结构信息时读取 HTML：
@@ -33,66 +34,52 @@ browser-use --session admin_001 get title
 browser-use --session admin_001 get html
 ```
 
-3. 需要精确读取当前 URL、表单数量或页面变量时使用 `eval`：
+3. 需要精确读取上下文时使用 `eval`：
 
 ```bash
-browser-use --session admin_001 eval "location.href"
 browser-use --session admin_001 eval "document.forms.length"
+browser-use --session admin_001 eval "Array.from(document.querySelectorAll('nav a, aside a')).map(a => ({text:a.innerText, href:a.href}))"
 ```
 
-4. 记录链接、表单、按钮、潜在敏感功能入口。
-5. 将页面发现写入 `pages` collection，并为下一轮导航或安全测试生成建议。
+4. 记录以下信息：
+- 页面属于哪个模块/子模块
+- 链接、表单、按钮、潜在敏感功能入口
+- 当前角色是否可见、可点、可进入
+- 页面侧 API 线索
+
+5. 将页面发现写入 `pages` collection，并补充 `site_map_report`
 
 ## 元素识别建议
 
 从 `state` 中重点关注：
-
-- 登录入口
+- 一级导航、侧边栏、面包屑
 - 个人中心、账户、用户管理
-- 设置、配置、审批、导出
-- 表格、列表、详情页入口
-- 提交按钮、搜索框、过滤器
+- 设置、配置、审批、导出、管理后台
+- 列表、详情页入口
+- 搜索框、过滤器、提交按钮
 
 从 `get html` 或 `eval` 中补充：
-
 - 表单 `action`
 - 隐藏字段
-- 页面中的显式 API 路径、下载链接、审批节点标识
+- 页面中的显式 API 路径
+- 板块标题、标签页、权限提示文本
 
-## 推荐命令模式
+## 模块化产出建议
 
-### Windows 文本读取
+### 模块识别
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session admin_001 state
-```
+- `modules`: 一级业务板块，如 `workflow`, `admin`, `profile`
+- `submodules`: 具体功能点，如 `workflow.approval-list`, `workflow.approval-detail`
+- `entry_points`: 导航入口、按钮入口、直接 URL 入口
 
-### 结构补充
+### 角色可达性
 
-```bash
-browser-use --session admin_001 get html
-browser-use --session admin_001 eval "Array.from(document.querySelectorAll('form')).map(f => ({ action: f.action, method: f.method }))"
-```
-
-### 视觉确认
-
-```bash
-browser-use --session admin_001 screenshot
-```
-
-## API 线索与边界
-
-允许记录的页面侧 API 线索：
-
-- 页面文本或 HTML 中直接出现的 `/api/...`、`/v1/...` 路径
-- 表单 `action`
-- 前端配置中的接口前缀
-
-不允许把以下内容当作“已证实 API”：
-
-- 猜测的接口路径
-- 并未被 BurpBridge 捕获的网络请求
-- 来自伪工具输出的请求列表
+每个关键入口至少记录一种状态：
+- `visible_and_accessible`
+- `visible_but_blocked`
+- `hidden`
+- `readonly`
+- `needs_form_or_search`
 
 ## 页面分析结果建议格式
 
@@ -101,9 +88,11 @@ browser-use --session admin_001 screenshot
   "page_url": "https://example.com/dashboard",
   "page_title": "Dashboard",
   "page_type": "dashboard",
+  "module": "workflow",
+  "submodule": "workflow.approval-list",
   "links": [
     {
-      "label": "个人中心",
+      "label": "审批管理",
       "interaction": "click index 5",
       "priority": "high"
     }
@@ -114,19 +103,35 @@ browser-use --session admin_001 screenshot
       "evidence": "state index 9"
     }
   ],
+  "role_access": {
+    "role": "user",
+    "status": "visible_but_blocked",
+    "evidence": "页面提示无权限"
+  },
   "api_hints": [
     {
-      "path": "/api/users/list",
+      "path": "/api/workflow/tasks",
       "source": "page_html"
     }
   ]
 }
 ```
 
+## site_map_report 补充规则
+
+- `confirmed_apis`: 仅记录 BurpBridge 已证实接口
+- `api_hints`: 页面侧线索
+- `coverage_gaps`: 记录模块未完成原因，如：
+  - `blocked_by_role`
+  - `external_domain_redirect`
+  - `needs_form_submission`
+  - `page_load_failed`
+  - `captcha_blocked`
+
 ## 加载要求
 
 ```yaml
 1. 尝试: skill({ name: "page-analysis" })
 2. 若失败: Read(".opencode/skills/browser/page-analysis/SKILL.md")
-3. 此 Skill 必须加载完成才能继续执行
+3. Navigator 必须加载本 Skill
 ```

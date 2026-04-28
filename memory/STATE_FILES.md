@@ -39,6 +39,7 @@
 | 文件 | 路径 | 用途 | 模板位置 |
 |------|------|------|----------|
 | 事件队列 | `result/events.json` | Agent间异步通信 | `memory/templates/events_template.json` |
+| 全貌测绘 | `result/site_survey.json` | 首轮测绘与补测聚合快照 | `memory/templates/site_survey_template.json` |
 | 窗口注册 | `result/windows.json` | 多标签页管理 | `memory/templates/windows_template.json` |
 | 会话状态 | `result/sessions.json` | 账号登录状态 | `memory/templates/sessions_template.json` |
 | API发现 | `result/apis.json` | 发现的API端点 | `memory/templates/apis_template.json` |
@@ -81,8 +82,12 @@
 | LOGIN_FAILED | Form | high | ❌ 否 |
 | EXPLORATION_SUGGESTION | Security/Analyzer | normal | ❌ 否 |
 | VULNERABILITY_FOUND | Security | high | ❌ 否 |
-| API_DISCOVERED | Scout | normal | ❌ 否 |
+| API_DISCOVERED | Navigator | normal | ❌ 否 |
 | FORM_SUBMISSION_ERROR | Form | normal | ❌ 否 |
+| EXTERNAL_DOMAIN_SKIPPED | Navigator | normal | ❌ 否 |
+| ACCESS_SCOPE_BLOCKED | Navigator | normal | ❌ 否 |
+| SURVEY_GAP_DETECTED | Navigator/Coordinator | high | ❌ 否 |
+| RECOVERY_ATTEMPTED | Navigator | normal | ❌ 否 |
 
 ### 事件状态流转
 

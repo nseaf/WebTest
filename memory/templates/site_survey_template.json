@@ -1,0 +1,26 @@
+{
+  "$schema": "site_survey_schema",
+  "description": "全貌测绘快照模板 - 用于生成 result/site_survey.json 运行时文件",
+  "session_id": null,
+  "target_host": null,
+  "allowed_hosts": [],
+  "survey_scope": "breadth_first",
+  "summary": {
+    "status": "pending",
+    "modules_total": 0,
+    "modules_completed": 0,
+    "submodules_total": 0,
+    "submodules_completed": 0,
+    "critical_gaps": 0,
+    "last_updated": null
+  },
+  "modules": [],
+  "submodules": [],
+  "entry_points": [],
+  "role_access_matrix": [],
+  "confirmed_apis": [],
+  "api_hints": [],
+  "coverage_gaps": [],
+  "external_domains": [],
+  "recommended_next_actions": []
+}
