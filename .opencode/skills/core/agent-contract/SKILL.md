@@ -1,220 +1,125 @@
 ---
 name: agent-contract
-description: "Agent合约模板，定义输出格式、截断防御、门控条件。Coordinator调用subagent前注入，确保Agent行为可控、输出可追踪。"
+description: "Agent 合约模板：统一输出格式、门控字段、会话上下文和截断检测，保证多 Agent 协作可追踪。"
 ---
 
 # Agent Contract Skill
 
-> Agent合约模板 — 输出格式、截断防御、门控条件、Token预算管理
+> Coordinator 在调度 subagent 前必须注入 Agent Contract。对于浏览器相关任务，contract 需要显式表达 session、attach 模式、活动 tab 和探索目标。
 
----
+## Contract 字段
 
-## Agent合约字段
+### 通用字段
 
-Coordinator调用subagent时注入以下合约参数：
-
-```
+```text
 ---Agent Contract---
-[Session ID]     {session_id}           ← 当前测试会话ID
-[Target Host]    {target_host}          ← 目标主机名
-[CDP URL]        {cdp_url}              ← Chrome CDP连接地址
-[Max Depth]      {max_depth}            ← 探索深度限制
-[Timeout]        {timeout_ms}           ← 超时时间（毫秒）
-[Current State]  {current_state}        ← 状态机当前状态
-[Gate Condition] {gate_condition}       ← 门控条件
-[Output Format]  HEADER + TRANSFER BLOCK + AGENT_OUTPUT_END
-[Token Budget]   输出≤5000字
-[DB Write]       实时写入MongoDB，不等Agent完成
-[Progress Track] 更新progress状态
+[Session ID]       {session_id}
+[Target Host]      {target_host}
+[Task Type]        {task_type}
+[Current State]    {current_state}
+[Gate Condition]   {gate_condition}
+[Output Format]    HEADER + TRANSFER BLOCK + AGENT_OUTPUT_END
+[Token Budget]     输出≤2000字
 ---End Contract---
 ```
 
----
+### 浏览器任务附加字段
+
+```text
+[Session Name]     {session_name}
+[Attach Mode]      {bootstrap|reuse|repair}
+[Active Tab]       {active_tab_index}
+[Exploration Goal] {test_focus 或当前探索目标}
+[Entry URLs]       {入口URL摘要}
+[Pending URLs]     {待访问URL摘要}
+[Visited Summary]  {已访问摘要}
+[Workflow Context] {审批/业务上下文，没有则写 none}
+```
+
+规则：
+
+- `Session Name` 是浏览器操作主键
+- `Attach Mode` 决定是否允许携带 `cdp_url`
+- `Active Tab` 必须与 `windows.json` / `sessions.json` 中的已知状态保持一致
+- `Exploration Goal` 不可留空；没有显式目标时写“same-domain prioritized exploration”
 
 ## 输出格式规范
 
-所有Agent必须使用标准输出格式，便于截断检测和数据传递：
+所有 Agent 必须使用以下输出框架：
 
-```
+```text
 === HEADER START ===
 STATE: {current_state}
 COVERAGE: pages={N}/{max}, apis={N}/{target}, tests={N}/{total}
-UNCHECKED: [待处理项列表]
+UNCHECKED: [待处理项]
 STATS: tools={N}, time=~{N}min
 === HEADER END ===
 
 === TRANSFER BLOCK START ===
-PAGES_ANALYZED: {url1}:{结论} | {url2}:{结论}
-APIS_DISCOVERED: {endpoint}:{method}:{test_status}
-TESTED_APIS: {endpoint}:{role}:{result}
+PAGES_ANALYZED: {url}:{结论}
+APIS_DISCOVERED: {endpoint}:{method}:{status}
+SESSION_STATE: {session_name}:{attach_mode}:{active_tab}:{url}
+RECOVERY_ACTIONS: {issue}:{action}:{result}
 COOKIE_SYNCED: {role}:{status}
 === TRANSFER BLOCK END ===
 
-=== AGENT_OUTPUT_END ===  ← 截断检测哨兵（必须存在）
+=== AGENT_OUTPUT_END ===
 ```
 
----
+浏览器相关任务至少要填 `SESSION_STATE`；发生恢复时至少要填一条 `RECOVERY_ACTIONS`。
 
-## 截断检测与恢复机制
+## 截断检测与恢复
 
-### 检测流程
+- 必须以 `=== AGENT_OUTPUT_END ===` 结尾
+- 若输出被截断：
+  - 先提取 HEADER 中的 `UNCHECKED` 与 `STATS`
+  - 再提取 `SESSION_STATE` 与 `RECOVERY_ACTIONS`
+  - 若恢复信息缺失，优先 resume 让 Agent 只补 `TRANSFER BLOCK`
 
-```
-对每个Agent的返回输出:
-  1. 检查哨兵: 输出末尾是否包含 === AGENT_OUTPUT_END ===
-     ├── YES → 输出完整，正常处理
-     └── NO  → 截断发生，执行恢复流程
-```
+## Navigator 合同示例
 
-### 恢复流程
-
-```
-截断发生时:
-  1. 检查HEADER是否存活
-     ├── YES → 提取COVERAGE/UNCHECKED/STATS
-     └── NO  → resume Agent请求仅输出HEADER
-  
-  2. TRANSFER BLOCK提取
-     - 尝试提取PAGES_ANALYZED/APIS_DISCOVERED
-     - 记录已完成的工作
-  
-  3. 发现表格补充（如截断）
-     - findings_truncated = true
-     - resume Agent补充发现表格
-     - 缺失数≤3 → 接受损失并标注
-     - 缺失数>3 → 再次resume或拆分任务
-```
-
-### 输出预算规则
-
-```
-- HEADER段: ≤400字
-- TRANSFER BLOCK段: ≤400字
-- 发现表格: 每条1行≤150字，最多20行
-- 详情描述: 仅关键发现，每条≤10行
-- 总输出目标: ≤5000字
-- 禁止: 大段原始代码、完整响应内容、冗长描述
-```
-
----
-
-## Token节约策略
-
-```
-1. 定向获取
-   - browser-use state 读取可交互元素
-   - browser-use get html 读取页面结构
-   
-2. 网络请求过滤
-   - 使用 BurpBridge 历史过滤 API 请求
-   - 页面侧只记录 API 线索，不伪造请求列表
-   
-3. 提前终止
-   - 同类型发现≥5个时合并描述
-   - 关键端点测试完成后立即汇报
-   
-4. 分批处理
-   - 大量API分批测试，每批≤10个
-   - 分批汇报，避免单次输出过大
-```
-
----
-
-## 门控条件定义
-
-### 状态转换门控
-
-| 状态转换 | 门控条件 | 验证方式 |
-|---------|---------|---------|
-| INIT → PHASE_1_EXPLORE | Chrome启动成功 + accounts.json存在 | 检查chrome_instances.json + config/accounts.json |
-| PHASE_1_EXPLORE → ROUND_1_TEST | 登录成功 OR 无需登录 + 页面≥N | 检查sessions.json + progress.stats |
-| ROUND_N_TEST → ROUND_N_EVALUATION | 关键端点测试完成 OR timeout | 检查progress.tested_apis比例 |
-| ROUND_N_EVALUATION → NEXT_ROUND | 三问法则判定YES | 检查UNCHECKED列表 |
-| ROUND_N_EVALUATION → REPORT | 三问法则判定NO | 无UNCHECKED项 |
-| REPORT → END | 报告生成完成 | 检查report文件 |
-
-### 三问法则
-
-用于判断是否需要继续下一轮测试：
-
-```
-Q1: 有未访问的重要路径？
-    - 检查 progress.pending APIs
-    - 检查 Navigator 发现的新链接
-    - 有敏感API未测试 → YES = NEXT_ROUND
-    
-Q2: 关键端点是否都测试了？
-    - 检查各模块 tested 比例
-    - 敏感模块 tested < 50% → NO = NEXT_ROUND
-    
-Q3: 发现的漏洞是否可能组合攻击？
-    - 检查 vulnerabilities 间依赖关系
-    - 存在跨模块组合可能 → YES = 进入攻击链验证
-```
-
----
-
-## 各Agent的合约模板
-
-### Navigator 页面分析合约
-
-```
+```text
 ---Agent Contract---
-[Session ID] session_20260422
-[Target Host] www.example.com
-[CDP URL] http://localhost:9222
-[Max Depth] 3
-[Current State] PHASE_1_EXPLORE
-[Gate Condition] 页面数≥20 OR 深度≥max_depth
-[Output Format] HEADER + TRANSFER BLOCK + AGENT_OUTPUT_END
-[DB Write] 发现API立即写入apis collection
-[Progress Track] 更新pages/apis统计
+[Session ID] session_20260428_001
+[Target Host] example.com
+[Task Type] explore
+[Current State] EXPLORATION_RUNNING
+[Gate Condition] max_pages reached or all pending_urls resolved
+[Session Name] admin_001
+[Attach Mode] reuse
+[Active Tab] 1
+[Exploration Goal] 审批入口与导出入口优先
+[Entry URLs] /dashboard, /approval
+[Pending URLs] /profile, /settings
+[Visited Summary] 已访问登录页、首页、工作台
+[Workflow Context] software_nre_approval
 ---End Contract---
 ```
 
-### Security Agent合约
+## Form 合同示例
 
-```
+```text
 ---Agent Contract---
-[Session ID] session_20260422
-[Target Host] www.example.com
-[Current State] ROUND_1_TEST
-[Gate Condition] 关键端点测试完成 OR timeout
-[Test Roles] admin, user, guest
-[Output Format] HEADER + TRANSFER BLOCK + AGENT_OUTPUT_END
-[DB Write] 发现漏洞立即写入findings collection
-[Progress Track] 更新apis.test_status
+[Session ID] session_20260428_001
+[Target Host] example.com
+[Task Type] execute_logins
+[Current State] INIT
+[Gate Condition] login success or captcha detected
+[Session Name] user_001
+[Attach Mode] reuse
+[Active Tab] 0
+[Exploration Goal] 建立认证态
+[Entry URLs] /login
+[Pending URLs] none
+[Visited Summary] 浏览器实例已创建，待登录
+[Workflow Context] none
 ---End Contract---
 ```
-
-### Form Agent合约
-
-```
----Agent Contract---
-[Session ID] session_20260422
-[CDP URL] http://localhost:9222
-[Account ID] admin_001
-[Login URL] https://example.com/login
-[Current State] PHASE_1_EXPLORE
-[Gate Condition] 登录成功 OR CAPTCHA_DETECTED
-[Output Format] HEADER + TRANSFER BLOCK + AGENT_OUTPUT_END
-[DB Write] 登录成功后更新sessions collection
-[Progress Track] 更新login_status
----End Contract---
-```
-
----
 
 ## 加载要求
 
-此Skill由以下Agent加载：
-
 ```yaml
-## Skill 加载规则（双通道）
-
-# Coordinator、Navigator、Form、Security、Analyzer 必须加载
-
 1. 尝试: skill({ name: "agent-contract" })
-2. 若失败: Read("skills/core/agent-contract/SKILL.md")
-3. 此Skill必须加载完成才能继续执行
+2. 若失败: Read(".opencode/skills/core/agent-contract/SKILL.md")
+3. 本 Skill 必须加载完成才能继续执行
 ```

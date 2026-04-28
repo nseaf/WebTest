@@ -2,7 +2,7 @@
 
 > AI-Agent Web渗透测试系统 | AI-Agent Web Penetration Testing System
 > 支持场景: Web探索 / 越权测试 / 注入测试 / 流程审批测试
-> 版本: 1.3 | 更新: 2026-04-23
+> 版本: 1.4 | 更新: 2026-04-28
 
 ---
 
@@ -167,6 +167,7 @@
 | form-handling | `.opencode/skills/browser/form-handling/` | 表单处理方法论 |
 | page-analysis | `.opencode/skills/browser/page-analysis/` | 页面分析方法论 |
 | api-discovery | `.opencode/skills/browser/api-discovery/` | API发现方法论 |
+| browser-recovery | `.opencode/skills/browser/browser-recovery/` | 浏览器异常恢复与tab切换方法论 |
 
 ---
 
@@ -199,7 +200,7 @@ browser-use doctor
 
 ```
 Priority 1: Browser Automation
-└─ browser-use CLI (Chrome CDP, 多实例管理) ← Navigator使用
+└─ browser-use CLI + scripts/browser-use-utf8.ps1 (Chrome CDP, 多实例管理, attach兼容) ← Navigator使用
 
 Priority 2: Security Testing
 ├─ BurpBridge MCP (请求同步、重放、认证上下文)
@@ -214,8 +215,8 @@ Priority 3: Data Management
 
 | Agent | 推荐工具 | 要求 |
 |-------|---------|---------|
-| Navigator | browser-use CLI | 使用browser-use cli + skill, chrome命令 |
-| Form | browser-use CLI | 使用browser-use cli + skill |
+| Navigator | browser-use CLI + wrapper | Windows 下优先使用 `scripts/browser-use-utf8.ps1`；首次 attach 才允许 `--cdp-url` |
+| Form | browser-use CLI + wrapper | 以 `session_name` 为主，默认复用会话，不重复传 `--cdp-url` |
 | Security | BurpBridge MCP | — |
 | Analyzer | Read/Grep工具 | 禁止执行任何操作（仅分析数据） |
 | Coordinator | `@` 调用 subagent | 禁止直接使用 mcp__burpbridge__* |
@@ -251,16 +252,22 @@ burpbridge_check_burp_health()  // 缺少 input 参数
 - 仅测试授权目标
 - 越权测试通过请求重放，不影响原流程状态
 - Cookie/Token 脱敏显示
+- `session_name` 为浏览器操作主键，`cdp_url` 仅用于 bootstrap/repair
 ```
 
 ---
 
 ## Version
 
-- **Current**: 1.3
-- **Updated**: 2026-04-23
+- **Current**: 1.4
+- **Updated**: 2026-04-28
 
 ### 更新日志
+
+#### v1.4 (2026-04-28)
+- 新增项目级 browser-recovery skill，支持 session 冲突恢复、tab 切换和常见浏览器异常恢复
+- 统一浏览器会话模型：`session_name` 为主，`cdp_url` 仅用于首次 attach 或 repair
+- 强化 Navigator/Form 的标签页处理与分层探索策略
 
 #### v1.3 (2026-04-23)
 - Scout功能合并到Navigator，系统精简为6个Agent

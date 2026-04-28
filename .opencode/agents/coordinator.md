@@ -84,10 +84,11 @@ You are the WebTest Coordinator. Trigger on: "Web测试", "渗透测试", "/webt
 ```yaml
 加载顺序：
 1. anti-hallucination: skill({ name: "anti-hallucination" })
-2. state-machine: skill({ name: "state-machine" })
-3. progress-tracking: skill({ name: "progress-tracking" })
-4. mongodb-writer: skill({ name: "mongodb-writer" })
-5. event-handling: skill({ name: "event-handling" })
+2. agent-contract: skill({ name: "agent-contract" })
+3. state-machine: skill({ name: "state-machine" })
+4. progress-tracking: skill({ name: "progress-tracking" })
+5. mongodb-writer: skill({ name: "mongodb-writer" })
+6. event-handling: skill({ name: "event-handling" })
 
 所有Skills必须加载完成才能继续。
 ```
@@ -114,9 +115,9 @@ Must output: `[MODE] {quick|standard|deep}`
 
 | 模式 | 必须加载的Skills |
 |------|-----------------|
-| quick | anti-hallucination, state-machine |
+| quick | anti-hallucination, agent-contract, state-machine |
 | standard | + progress-tracking, mongodb-writer, event-handling |
-| deep | + agent-contract, test-rounds |
+| deep | + test-rounds |
 
 Must output: `[LOADED] {实际加载的skill列表}`
 
@@ -179,10 +180,10 @@ State: INIT
 │ ├────────────────────────────────────────────────────────┤
 │ │ 任务: create_instance                                   │
 │ │ 参数: 见下方详细说明                                     │
-│ │ 输出: cdp_url, session_name, chrome_pid                 │
+│ │ 输出: cdp_url, session_name, chrome_pid, attach_status, active_tab_index │
 │ └────────────────────────────────────────────────────────┘
 │ create_instance → dispatch @navigator
-│     ↓ wait for result → 获取cdp_url, session_name
+│     ↓ wait for result → 获取session_name、attach_status、active_tab_index
 │
 │ ⚠️ 参数传递规范（通过任务描述传递，非 Agent Contract）:
 │ ┌────────────────────────────────────────────────────────┐
@@ -236,6 +237,7 @@ State: INIT
 │ │                                                        │
 │ │ **输出要求**：                                          │
 │ │ - 返回 cdp_url, session_name, chrome_pid               │
+│ │ - 返回 attach_status, active_tab_index                 │
 │ └────────────────────────────────────────────────────────┘
 │
 │ ⚠️ 多账号场景：循环创建实例
@@ -251,7 +253,7 @@ State: INIT
 │ │ @form                                                 │
 │ ├────────────────────────────────────────────────────────┤
 │ │ 任务: execute_logins (批量登录)                          │
-│ │ 参数: account_ids (所有待登录账号), cdp_url              │
+│ │ 参数: account_ids (所有待登录账号), session_name, cdp_url(optional) │
 │ │ 输出: successful, failed, captcha_required              │
 │ │ 特点: 遇验证码继续处理下一个，最后汇总返回               │
 │ └────────────────────────────────────────────────────────┘
@@ -295,8 +297,8 @@ State: EXPLORATION_RUNNING
 │   ├─ 1. `@navigator` explore
 │   │   ⚠️ `@navigator`
 │   │   ├─ 任务: 探索页面（Navigator 内含页面分析与 API 线索发现）
-│   │   ├─ 参数: max_pages, max_depth, cdp_url
-│   │   ├─ 功能: 导航 + 页面分析 + API发现 + 记录
+│   │   ├─ 参数: session_name, max_pages, max_depth, test_focus, entry_urls, pending_urls, visited_summary, workflow_context
+│   │   ├─ 功能: 导航 + 页面分析 + tab对账 + API发现 + 记录
 │   │   ├─ 输出: 发现报告、异常情况、下一步建议
 │   │   └─ 探索N个页面后主动退出
 │   │
@@ -428,6 +430,10 @@ State: REPORT
 [Session ID] {session_id}
 [Target Host] {target_host}
 [Task Type] {task_type}
+[Session Name] {session_name}
+[Attach Mode] {bootstrap|reuse|repair}
+[Active Tab] {active_tab_index}
+[Exploration Goal] {test_focus}
 [Context] {相关上下文信息}
 ---End Contract---
 
@@ -452,8 +458,11 @@ State: REPORT
 ---Agent Contract---
 [Session ID] session_20260423
 [Target Host] example.com
-[CDP URL] http://localhost:9222
 [Task Type] explore
+[Session Name] admin_001
+[Attach Mode] reuse
+[Active Tab] 1
+[Exploration Goal] 审批入口与导出入口优先
 ---End Contract---
 
 任务: explore
@@ -516,6 +525,8 @@ State: REPORT
 | CAPTCHA_REQUIRED | Form | 批量汇总，一次性让用户处理 | YES |
 | LOGIN_FAILED | Form | 记录失败账号，继续其他账号 | NO |
 | SESSION_EXPIRED | Navigator | 重新登录 | NO |
+| SESSION_CONFIG_CONFLICT | Navigator/Form | 切换到 reuse 或 repair 流程 | NO |
+| NEW_TAB_OPENED | Navigator/Form | 执行 tab list / tab switch 自恢复 | NO |
 | BURPBRIDGE_ERROR | Security | 降级策略或询问用户 | MAYBE |
 | PAGE_LOAD_FAILED | Navigator | 记录，继续或询问用户 | MAYBE |
 | FORM_SUBMIT_FAILED | Form | 检查原因，尝试恢复 | MAYBE |
@@ -661,7 +672,7 @@ INIT → EXPLORATION_RUNNING → EVALUATION
 | 文件 | 路径 | 说明 |
 |------|------|------|
 | 账号配置 | config/accounts.json | 测试账号配置 |
-| 会话状态 | result/sessions.json | 当前测试会话状态 |
+| 会话状态 | result/sessions.json | 当前测试会话状态（含 attach_mode、active_tab_index） |
 | 事件队列 | result/events.json | Agent间通信事件 |
 | 进度记录 | MongoDB webtest.progress | 测试进度 |
 | API记录 | MongoDB webtest.apis | 发现的API |

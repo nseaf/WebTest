@@ -58,7 +58,7 @@ Skills 是可复用的方法论模块，位于 `.opencode/skills/`：
 - **Core**: anti-hallucination, agent-contract, shared-browser-state
 - **Workflow**: state-machine, test-rounds, event-handling
 - **Security**: idor-testing, injection-testing, vulnerability-rating
-- **Browser**: page-navigation, form-handling, page-analysis, api-discovery
+- **Browser**: page-navigation, form-handling, page-analysis, api-discovery, browser-recovery
 - **Data**: mongodb-writer, progress-tracking, permission-matrix-parser
 
 详见 **`.opencode/skills/SKILLS.md`**。
@@ -68,14 +68,15 @@ Skills 是可复用的方法论模块，位于 `.opencode/skills/`：
 | 组件 | 技术 | 说明 |
 |------|------|------|
 | **Agent框架** | Claude Code | 基于 Prompt 的角色扮演 |
-| **浏览器自动化** | browser-use CLI | 支持多Chrome实例 |
+| **浏览器自动化** | browser-use CLI + wrapper | 支持多Chrome实例、会话复用与Windows下统一输出 |
 | **安全测试** | BurpBridge MCP | BurpSuite插件，请求重放 |
 | **数据存储** | MongoDB | BurpBridge依赖 |
 
 ## 关键特性
 
-- **多Chrome实例管理** - 每个账号独立Chrome实例和CDP端口
+- **多Chrome实例管理** - 每个账号独立Chrome实例和CDP端口，首次 attach 后统一复用 `session_name`
 - **登录态保持** - Cookie管理、验证码检测、会话过期处理
+- **智能标签页处理** - 点击后自动执行 tab 对账与切换验证
 - **API发现** - 网络请求分析、API模式识别、敏感数据检测
 - **并行架构** - Security Agent与探索Agent并行运行
 - **流程审批测试** - 权限文档解析、请求重放越权测试（不影响原流程）

@@ -28,8 +28,8 @@
 | Agent | 必须加载的 Skills |
 |-------|------------------|
 | Coordinator | anti-hallucination, agent-contract, state-machine, test-rounds, mongodb-writer, progress-tracking, event-handling |
-| Navigator | anti-hallucination, agent-contract, shared-browser-state, page-navigation, page-analysis, api-discovery, mongodb-writer, progress-tracking, auth-context-sync |
-| Form | anti-hallucination, agent-contract, shared-browser-state, form-handling, mongodb-writer |
+| Navigator | anti-hallucination, agent-contract, shared-browser-state, page-navigation, page-analysis, api-discovery, browser-recovery, mongodb-writer, progress-tracking, auth-context-sync |
+| Form | anti-hallucination, agent-contract, shared-browser-state, form-handling, browser-recovery, mongodb-writer |
 | Security | anti-hallucination, agent-contract, idor-testing, injection-testing, auth-context-sync, mongodb-writer, progress-tracking, vulnerability-rating, burpbridge-api-reference, sensitive-api-detection |
 | Analyzer | anti-hallucination, agent-contract, vulnerability-rating, mongodb-writer |
 | account_parser | anti-hallucination, agent-contract, excel-merged-cell-handler, permission-matrix-parser |
@@ -38,6 +38,9 @@
 
 - `browser-use` 语义以官方 skill 为准。
 - 本项目只在其之上补充 Navigator 管理的受管 Chrome、代理和 CDP 约束。
+- `session_name` 是浏览器操作主键；`cdp_url` 仅用于 `bootstrap/repair` attach。
+- Windows 下浏览器命令优先通过 `scripts/browser-use-utf8.ps1`，以复用项目级 attach 兼容逻辑。
+- 点击后必须执行 `tab list` 对账；不要仅凭原 tab URL 是否变化判断导航成功。
 - 页面与表单交互的事实来源以 `browser-use state` 为主，必要时辅以 `get html`、`eval`、`get title`、`screenshot`。
 - API 事实来源以 BurpBridge 历史为主；页面侧只能提供 API 线索。
 - Cookie 同步职责属于 Navigator，不属于 Form。
@@ -59,6 +62,7 @@ browser-use --session admin_001 eval "location.href"
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session admin_001 state
+powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --attach-mode bootstrap --session admin_001 --cdp-url http://localhost:9222 open https://example.com
 ```
 
 ### API 发现边界

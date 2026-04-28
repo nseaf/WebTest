@@ -49,7 +49,7 @@ Skills 是可复用的方法论模块，被 Agent 加载使用：
 ### 分类 Skills
 - **Workflow**: state-machine, test-rounds, event-handling
 - **Security**: idor-testing, injection-testing, vulnerability-rating
-- **Browser**: page-navigation, form-handling, page-analysis, api-discovery
+- **Browser**: page-navigation, form-handling, page-analysis, api-discovery, browser-recovery
 - **Data**: mongodb-writer, progress-tracking, permission-matrix-parser
 
 详见 **`.opencode/skills/SKILLS.md`**。
@@ -123,7 +123,7 @@ WebTest/
 
 ### 调用方式
 
-通过 `/browser-use` Skill 调用 browser-use CLI：
+通过项目包装脚本调用 browser-use CLI：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session admin_001 state
@@ -133,7 +133,9 @@ powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session 
 
 - `browser-use` 命令语义以官方 skill 为准
 - 本项目通常由 Navigator 先启动带代理的受管 Chrome，再按项目方式接入 session
-- `--cdp-url` 属于项目接入方式，不应写成 `browser-use` 的通用前提
+- `session_name` 是浏览器操作主键
+- `--cdp-url` 仅用于 bootstrap/repair attach，不应写成所有命令的固定前缀
+- Windows 下优先通过 `scripts/browser-use-utf8.ps1` 执行，以自动处理 attach 兼容和 UTF-8 输出
 
 ### 核心命令
 

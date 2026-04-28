@@ -1,103 +1,135 @@
 ---
 name: page-navigation
-description: "页面导航方法论，Navigator Agent使用。基于 browser-use CLI 的 URL 导航、状态读取、索引点击和深度控制。"
+description: "页面导航方法论，包含显式 URL 导航、索引点击、tab 对账、导航成功判定与分层探索顺序。"
 ---
 
 # Page Navigation Skill
 
-> 页面导航以 `browser-use` 官方 CLI 语义为准；本项目只在其之上补充受管 Chrome、代理和多实例约束。
+> Navigator 和 Form 在 Windows 下都应优先通过 `scripts/browser-use-utf8.ps1` 访问 `browser-use`，以复用项目级 session/attach 逻辑。
 
 ## 核心原则
 
 - 先 `state`，再交互。
-- 优先使用 `open` 直接导航到明确 URL。
-- 需要点击时，先从 `state` 读取元素索引，再执行 `click <index>`。
-- 不使用伪原语，也不把选择器式点击当作主工作流。
-- Windows 下读取文本时优先使用 `scripts/browser-use-utf8.ps1`。
+- 优先显式 URL 导航，其次才是索引点击。
+- 所有交互默认使用 `--session {name}`；只有 `bootstrap/repair` 场景才允许 `--cdp-url`。
+- 点击后不能只看“当前 tab URL 是否变化”，必须做 tab 对账。
+- 导航成功判定使用联合证据：URL、title、DOM 状态、tab 变化。
 
-## 本项目中的导航流程
-
-1. Navigator 接收目标 URL 或待访问链接。
-2. 校验是否同域、是否已访问、是否命中忽略模式。
-3. 使用 `browser-use` 打开页面或点击索引元素。
-4. 使用 `state`、`get title`、必要时 `get html` 验证结果。
-5. 记录页面访问、更新进度、必要时通知后续分析或安全测试。
-
-## browser-use 命令工作流
-
-### Windows 推荐写法
+## 标准命令模式
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session admin_001 state
+powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session admin_001 open https://example.com/dashboard
+powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session admin_001 click 5
+powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session admin_001 tab list
+powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session admin_001 tab switch 1
 ```
 
-### 直接 URL 导航
+## 点击后 tab 对账流程
 
-```bash
-browser-use --session admin_001 open https://example.com/dashboard
-browser-use --session admin_001 get title
-browser-use --session admin_001 state
+### Step 1: 点击前快照
+
+记录以下信息：
+
+- `tab list`
+- `get title`
+- `eval "location.href"`
+- 当前 `state`
+- `windows.json` 里的 `known_tabs`
+
+### Step 2: 执行点击
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session admin_001 click 5
 ```
 
-### 索引式点击导航
+### Step 3: 点击后短等待并重新取证
 
-```bash
-browser-use --session admin_001 state
-browser-use --session admin_001 click 5
-browser-use --session admin_001 wait text "个人中心"
-browser-use --session admin_001 get title
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session admin_001 tab list
+powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session admin_001 get title
+powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session admin_001 eval "location.href"
+powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session admin_001 state
 ```
 
-### 读取页面文本或结构
+### Step 4: 判定与动作
 
-```bash
-browser-use --session admin_001 state
-browser-use --session admin_001 get html
-browser-use --session admin_001 eval "location.href"
+若出现以下任一情况，必须进入 tab 切换候选流程：
+
+- URL 未变，但 tab 数量变化
+- 出现新 tab
+- 活动 tab 变化
+- title 或 DOM 仍停留在旧页面，但点击目标明显应打开新页
+
+### Step 5: tab 切换候选优先级
+
+按以下顺序尝试切换并验证：
+
+1. 新出现的 tab
+2. `tab list` 中标题/URL 最接近点击目标的 tab
+3. 非当前 tab 中最近更新时间最新的 tab
+
+切换后必须重新执行：
+
+- `get title`
+- `eval "location.href"`
+- `state`
+
+验证成功后更新：
+
+- `sessions.json.active_tab_index`
+- `sessions.json.last_verified_url`
+- `sessions.json.last_verified_title`
+- `windows.json.known_tabs[*]`
+
+## 导航成功判定
+
+导航成功满足以下任一组合即可：
+
+- URL 变化且 title/DOM 与目标一致
+- URL 未明显变化，但 DOM 明显进入新上下文
+- 新 tab 被切换后，title/URL/DOM 一致
+- 同页局部跳转，但页面关键元素、表单数量、主要按钮集合已变化
+
+不要仅因为“原 tab URL 未变”就判定跳转失败。
+
+## 分层探索顺序
+
+Navigator 每轮探索前先构建优先队列：
+
+1. Coordinator 或用户显式指定的路径
+2. 登录后高价值页面：个人中心、设置、审批、导出、管理后台
+3. 历史 `pending_urls`
+4. 页面分析新发现的高优先级入口
+5. 低价值页面：帮助、关于、纯展示页
+
+## 去重与跳过规则
+
+- 已访问且无新增状态价值的页面不重复进入
+- 同域去重，保留不同业务语义的 query/path
+- 跳过登出、下载、静态资源、明显无测试价值的外链
+- 命中 `pending_urls` 时优先解决历史未完成项
+
+## 建议输出
+
+```json
+{
+  "navigation_result": {
+    "session_name": "admin_001",
+    "attach_mode": "reuse",
+    "active_tab_index": 1,
+    "previous_url": "https://example.com/dashboard",
+    "verified_url": "https://example.com/profile",
+    "verification_signals": ["title_changed", "state_changed", "tab_switched"],
+    "recovery_actions": []
+  }
+}
 ```
-
-## 项目约束：受管 Chrome 与 CDP
-
-- `browser-use` 官方默认支持直接 `open/state/click/input/...`。
-- 本项目为了让流量进入 Burp 代理，并让多个 Agent 共享同一浏览器状态，通常由 Navigator 先启动带代理的 Chrome，再把 session 接到该实例。
-- 因此，`--cdp-url` 是**本项目的接入方式**，不是 `browser-use` 的通用前提。
-- 一旦 session 已建立，后续操作优先只传 `--session {name}`。
-
-## URL 过滤与深度控制
-
-默认策略：
-
-- 仅访问目标域名。
-- 跳过登出链接、下载链接、静态资源链接。
-- 对重复 URL 去重。
-- 受 `max_pages` 和 `max_depth` 约束。
-
-推荐优先级：
-
-- 高优先级：登录、管理、个人中心、设置、审批、数据导出
-- 中优先级：列表页、详情页、查询页
-- 低优先级：帮助、关于、联系页
-
-## 受支持的证据来源
-
-- 页面元素：`state`
-- 当前 URL：`eval "location.href"`
-- 标题：`get title`
-- 页面结构：`get html`
-- 视觉确认：`screenshot`
-
-不要使用不存在的 `browser_click(...)` 之类伪接口。
-
-## Cookie 变化检查
-
-- Navigator 可以在关键导航后执行 `browser-use --session {name} cookies get --json`。
-- 如果 Cookie 与 `result/sessions.json` 中登记的认证上下文不同，应记录 `COOKIE_CHANGED` 并在需要时触发同步。
-- Cookie 同步职责属于 Navigator，不属于 Form。
 
 ## 加载要求
 
 ```yaml
 1. 尝试: skill({ name: "page-navigation" })
 2. 若失败: Read(".opencode/skills/browser/page-navigation/SKILL.md")
-3. 此 Skill 必须加载完成才能继续执行
+3. 本 Skill 必须加载完成才能继续执行
 ```
