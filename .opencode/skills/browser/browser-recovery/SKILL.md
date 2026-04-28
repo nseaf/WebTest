@@ -24,6 +24,13 @@ description: "项目级浏览器恢复规则：session 配置冲突、tab 偏移
 3. 忽略重复传入的 `--cdp-url`
 4. 重试原命令
 
+### 1.1 `HEADLESS_FALLBACK_DETECTED`
+
+1. 如果 create_instance 后无法证明已 attach 到外部可见 Chrome，立即视为异常
+2. 检查是否缺失 `cdp_url`、`chrome_pid` 或 visible browser 证据
+3. 优先回到显式启动 Chrome + bootstrap attach
+4. 不允许保留无头 session 继续主流程
+
 ### 2. `NEW_TAB_OPENED`
 
 1. 执行 `tab list`

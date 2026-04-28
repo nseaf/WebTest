@@ -14,10 +14,10 @@
 |------------|------|---------|-----------|
 | test_sessions | 测试会话 | Coordinator初始化 | Coordinator |
 | findings | 漏洞发现 | Security发现立即写入 | Security |
-| apis | API发现 | Scout发现立即写入 | Scout |
-| pages | 页面发现 | Scout分析后写入 | Scout |
+| apis | API发现 | Navigator 确认或补充证据后立即写入 | Navigator |
+| pages | 页面发现 | Navigator 分析后写入 | Navigator |
 | events | 事件队列 | 任意Agent创建事件 | 所有Agent |
-| progress | 测试进度 | 每个Agent完成任务后更新 | Scout/Security |
+| progress | 测试进度 | 每个Agent完成任务后更新 | Navigator/Security |
 
 **核心原则**：每发现一个数据立即写入MongoDB，不等Agent完成，防止数据丢失。
 
@@ -29,7 +29,7 @@
 
 | 文件 | 路径 | 用途 |
 |------|------|------|
-| 会话状态 | `result/sessions.json` | 登录状态、Cookie信息、CDP连接 |
+| 会话状态 | `result/sessions.json` | 登录状态、Cookie信息、CDP连接、当前流程态 |
 | Chrome实例 | `result/chrome_instances.json` | Chrome实例注册表、PID、端口 |
 
 ---
@@ -53,19 +53,28 @@
 
 ## 1. 事件队列 (events.json)
 
+### 文件顶层格式
+
+```json
+{
+  "$schema": "events_schema",
+  "allowed_hosts": ["example.com", "sso.example.com"],
+  "events": []
+}
+```
+
 ### 统一事件格式
 
 ```json
 {
   "event_id": "evt_20260415_103000_001",
-  "event_type": "CAPTCHA_DETECTED",
-  "source_agent": "Form Agent",
-  "priority": "critical",
+  "event_type": "SURVEY_GAP_DETECTED",
+  "source_agent": "Navigator Agent",
+  "priority": "high",
   "status": "pending",
   "payload": {
-    "window_id": "window_0",
-    "login_url": "https://example.com/login",
-    "captcha_type": "image"
+    "module": "workflow",
+    "reason": "role B 未验证"
   },
   "created_at": "2026-04-15T10:30:00Z",
   "handled_at": null,
@@ -164,6 +173,13 @@ function createEvent(eventType, sourceAgent, priority, payload) {
   "role": "admin",
   "window_id": "window_0",
   "status": "active",
+  "current_state": "SITE_SURVEY",
+  "attach_status": "attached",
+  "attach_mode": "reuse",
+  "cdp_url": "http://127.0.0.1:9222",
+  "chrome_pid": 12345,
+  "last_verified_url": "https://example.com/dashboard",
+  "last_verified_title": "Dashboard",
   "logged_in_at": "2026-04-15T10:00:00Z",
   "last_activity_time": "2026-04-15T10:30:00Z",
   "cookies": ["session=abc123", "token=xyz789"],
@@ -264,6 +280,8 @@ function createEvent(eventType, sourceAgent, priority, payload) {
 1. **测试会话开始时** (Coordinator Agent 负责)
    - 复制 `memory/templates/*_template.json` 到 `result/` 目录
    - 或直接创建空的状态文件（数组为空）
+   - 初始化 `result/site_survey.json`
+   - 初始化 `test_sessions.current_state = INIT`
 
 2. **各 Agent 首次写入时**
    - 读取现有文件
@@ -312,11 +330,12 @@ function appendRecord(filePath, newRecord) {
 mkdir -p result
 
 # 初始化所有状态文件（清空或重置）
-echo '{"$schema":"events_schema","events":[]}' > result/events.json
+echo '{"$schema":"events_schema","allowed_hosts":[],"events":[]}' > result/events.json
 echo '{"$schema":"windows_schema","windows":[]}' > result/windows.json
 echo '{"$schema":"sessions_schema","sessions":[]}' > result/sessions.json
 echo '{"$schema":"apis_schema","apis":[]}' > result/apis.json
 echo '{"$schema":"discovered_pages_schema","pages":[]}' > result/pages.json
+echo '{"$schema":"site_survey_schema","allowed_hosts":[],"modules":[],"submodules":[],"entry_points":[],"role_access_matrix":[],"confirmed_apis":[],"api_hints":[],"coverage_gaps":[],"external_domains":[],"recommended_next_actions":[]}' > result/site_survey.json
 echo '{"$schema":"discovered_forms_schema","forms":[]}' > result/forms.json
 echo '{"$schema":"discovered_links_schema","links":[]}' > result/links.json
 echo '{"$schema":"vulnerabilities_schema","vulnerabilities":[],"statistics":{"total":0,"by_severity":{"critical":0,"high":0,"medium":0,"low":0},"by_type":{"IDOR":0,"XSS":0,"SQLI":0,"COMMAND_INJECTION":0,"CSRF":0,"OTHER":0}}}' > result/vulnerabilities.json

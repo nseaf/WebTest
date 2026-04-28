@@ -30,8 +30,8 @@
 
 | Agent | 模式 | 角色 |
 |-------|------|------|
-| **Coordinator** | primary | 主控制器，工作流调度、状态管理、异常处理 |
-| Navigator | subagent | 页面导航、页面分析、API发现与 Cookie 同步（已合并Scout）|
+| **Coordinator** | primary | 主控制器，工作流调度、状态管理、异常处理、全貌测绘规划 |
+| Navigator | subagent | 页面导航、全貌测绘、模块深挖、角色可达性验证、页面分析、API发现与 Cookie 同步 |
 | Form | subagent | 表单识别、登录执行、验证码处理 |
 | Security | subagent | IDOR测试、注入测试、BurpBridge集成 |
 | Analyzer | subagent | 重放结果分析、漏洞判定、严重性评级 |
@@ -68,18 +68,32 @@ Skills 是可复用的方法论模块，位于 `.opencode/skills/`：
 | 组件 | 技术 | 说明 |
 |------|------|------|
 | **Agent框架** | Claude Code | 基于 Prompt 的角色扮演 |
-| **浏览器自动化** | browser-use CLI + wrapper | 支持多Chrome实例、会话复用与Windows下统一输出 |
+| **浏览器自动化** | browser-use CLI + wrapper | 支持多Chrome实例、会话复用、固定Chrome启动参数与Windows下统一输出 |
 | **安全测试** | BurpBridge MCP | BurpSuite插件，请求重放 |
 | **数据存储** | MongoDB | BurpBridge依赖 |
 
 ## 关键特性
 
 - **多Chrome实例管理** - 每个账号独立Chrome实例和CDP端口，首次 attach 后统一复用 `session_name`
+- **统一Chrome启动参数** - 通过 `scripts/start-managed-chrome.ps1` 固定追加 `--no-first-run` 与 `--no-default-browser-check`
+- **Survey-First 流程** - 新会话先执行 `SITE_SURVEY`，输出模块、角色可达性与覆盖缺口，再进入定向探索或安全测试
 - **登录态保持** - Cookie管理、验证码检测、会话过期处理
 - **智能标签页处理** - 点击后自动执行 tab 对账与切换验证
 - **API发现** - 网络请求分析、API模式识别、敏感数据检测
 - **并行架构** - Security Agent与探索Agent并行运行
 - **流程审批测试** - 权限文档解析、请求重放越权测试（不影响原流程）
+
+## Survey-First 关键任务
+
+- `survey_site`：首轮全貌测绘
+- `continue_survey`：回补模块、入口与角色覆盖缺口
+- `deep_explore_module`：深挖高风险模块
+- `verify_role_access`：验证角色 A/B 的可达差异
+
+关键上下文：
+- `allowed_hosts`
+- `role_access_matrix`
+- `coverage_gaps`
 
 ## 目录结构
 

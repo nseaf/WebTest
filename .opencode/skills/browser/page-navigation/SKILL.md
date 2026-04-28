@@ -12,6 +12,7 @@ description: "页面导航方法论，包含显式 URL 导航、索引点击、t
 - 先 `state`，再交互。
 - 优先显式 URL 导航，其次才是索引点击。
 - 所有交互默认使用 `--session {name}`；只有 `bootstrap/repair` 场景才允许 `--cdp-url`。
+- `create_instance` 之前必须已经 attach 到一个可见的普通 Chrome；不接受无头会话作为前提。
 - 点击后不能只看“当前 tab URL 是否变化”，必须做 tab 对账。
 - 每次导航成功判定前，先执行域名边界判定。
 - 外部域跳转只记录、不扩散。

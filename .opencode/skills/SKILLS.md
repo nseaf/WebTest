@@ -28,14 +28,16 @@
 | Agent | 必须加载的 Skills |
 |-------|------------------|
 | Coordinator | anti-hallucination, agent-contract, state-machine, test-rounds, mongodb-writer, progress-tracking, event-handling |
-| Navigator | anti-hallucination, agent-contract, shared-browser-state, page-navigation, page-analysis, api-discovery, browser-recovery, mongodb-writer, progress-tracking, auth-context-sync |
-| Form | anti-hallucination, agent-contract, shared-browser-state, form-handling, browser-recovery, mongodb-writer |
+| Navigator | anti-hallucination, agent-contract, browser-use, shared-browser-state, page-navigation, page-analysis, api-discovery, browser-recovery, mongodb-writer, progress-tracking, auth-context-sync |
+| Form | anti-hallucination, agent-contract, browser-use, shared-browser-state, form-handling, browser-recovery, mongodb-writer |
 | Security | anti-hallucination, agent-contract, idor-testing, injection-testing, auth-context-sync, mongodb-writer, progress-tracking, vulnerability-rating, burpbridge-api-reference, sensitive-api-detection |
 | Analyzer | anti-hallucination, agent-contract, vulnerability-rating, mongodb-writer |
 | account_parser | anti-hallucination, agent-contract, excel-merged-cell-handler, permission-matrix-parser |
 
 ## 关键约定
 
+- `browser-use` 官方 skill 负责 CLI 语义；项目内 browser skills 负责受管 Chrome、session、recovery 和 CDP 约束。
+- Chrome 启动优先通过 `scripts/start-managed-chrome.ps1`，统一追加 `--no-first-run` 与 `--no-default-browser-check`。
 - `browser-use` 语义以官方 skill 为准。
 - 本项目只在其之上补充 Navigator 管理的受管 Chrome、代理和 CDP 约束。
 - `session_name` 是浏览器操作主键；`cdp_url` 仅用于 `bootstrap/repair` attach。

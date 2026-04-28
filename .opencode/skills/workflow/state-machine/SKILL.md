@@ -59,6 +59,50 @@ const stateProperties = {
 };
 ```
 
+## 状态持久化
+
+### `test_sessions` 最小字段
+
+```javascript
+{
+  session_id: "session_20260425_001",
+  target_host: "example.com",
+  current_state: "SITE_SURVEY",
+  status: "running",
+  updated_at: Date.now(),
+  state_history: [
+    {
+      from: "INIT",
+      to: "SITE_SURVEY",
+      timestamp: Date.now(),
+      reason: "gate1 passed"
+    }
+  ]
+}
+```
+
+### `result/sessions.json` 最小字段
+
+```javascript
+{
+  session_name: "admin_001",
+  current_state: "SITE_SURVEY",
+  attach_mode: "reuse",
+  attach_status: "attached",
+  cdp_url: "http://127.0.0.1:9222",
+  chrome_pid: 12345,
+  active_tab_index: 0,
+  last_verified_url: "https://example.com/dashboard",
+  last_verified_title: "Dashboard"
+}
+```
+
+### 状态写入原则
+
+- 每次状态迁移必须同时更新 `test_sessions.current_state` 和 `state_history`
+- 关键浏览器态必须同步写回 `result/sessions.json`
+- 超时、异常、用户介入都必须留下可恢复的状态记录
+
 ## 状态转换图
 
 ```text
@@ -87,7 +131,7 @@ const gate1 = {
     "auto_sync 已启用",
     "登录成功（如需要）"
   ],
-  onPass: () => updateSessionState("SITE_SURVEY")
+  onPass: () => updateSessionState("SITE_SURVEY", "gate1 passed")
 };
 ```
 
@@ -102,7 +146,7 @@ const gate2 = {
     "recovery_actions 已回传",
     "requires_user_action = false 或已完成用户操作"
   ],
-  onPass: () => updateSessionState("EVALUATION")
+  onPass: () => updateSessionState("EVALUATION", "site survey round completed")
 };
 ```
 
@@ -115,7 +159,7 @@ const gate3 = {
     "Navigator 返回 success 或 partial",
     "目标模块 exploration_status 已更新"
   ],
-  onPass: () => updateSessionState("EVALUATION")
+  onPass: () => updateSessionState("EVALUATION", "module exploration round completed")
 };
 ```
 
@@ -128,7 +172,7 @@ const gate4 = {
     "Security 测试完成",
     "Analyzer 分析完成"
   ],
-  onPass: () => updateSessionState("EVALUATION")
+  onPass: () => updateSessionState("EVALUATION", "security testing completed")
 };
 ```
 
@@ -194,7 +238,7 @@ const gate6 = {
     "报告文件生成成功",
     "受管 Chrome 实例已关闭"
   ],
-  onPass: () => updateSessionState("END")
+  onPass: () => updateSessionState("END", "report completed")
 };
 ```
 
@@ -204,10 +248,40 @@ const gate6 = {
 - `EXPLORATION_RUNNING` 超时：进入 `EVALUATION`，由 Coordinator 判断是否继续深挖
 - `SECURITY_TESTING` 超时：进入 `EVALUATION`，避免流程卡死
 - 任何状态若 `requires_user_action=true`，先暂停流程等待用户
+- 超时发生时必须写入 `test_sessions.current_state`、`updated_at` 和对应 `state_history.reason`
+- 用户介入暂停时必须把会话标记为 `paused_waiting_user`
 
 ## 子 Agent 返回后的状态判断
 
 ```javascript
+let currentState = "INIT";
+
+function updateSessionState(newState, reason) {
+  mongodbUpdate({
+    collection: "test_sessions",
+    filter: { session_id: currentSessionId },
+    update: {
+      $set: {
+        current_state: newState,
+        updated_at: Date.now()
+      },
+      $push: {
+        state_history: {
+          from: currentState,
+          to: newState,
+          timestamp: Date.now(),
+          reason: reason
+        }
+      }
+    }
+  });
+
+  updateSessionsJson({
+    current_state: newState,
+    updated_at: Date.now()
+  });
+}
+
 function handleAgentReturn(agentResult, agentName, currentState) {
   if (agentResult.status === "exception") {
     handleException(agentResult.exceptions);
@@ -215,6 +289,7 @@ function handleAgentReturn(agentResult, agentName, currentState) {
   }
 
   if (agentResult.requires_user_action) {
+    markTestSessionPaused("paused_waiting_user", agentResult.user_action_prompt);
     pauseSession();
     return;
   }

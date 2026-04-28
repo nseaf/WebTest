@@ -37,10 +37,11 @@ You are the Form Agent. Trigger on: Coordinator dispatch, @form call.
 加载顺序：
 1. anti-hallucination
 2. agent-contract
-3. shared-browser-state
-4. form-handling
-5. browser-recovery
-6. mongodb-writer
+3. browser-use
+4. shared-browser-state
+5. form-handling
+6. browser-recovery
+7. mongodb-writer
 ```
 
 ## 3. 核心职责

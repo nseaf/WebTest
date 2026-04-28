@@ -75,8 +75,8 @@
 
 | Agent | 模式 | 角色 | 功能 | 调度者 |
 |-------|------|------|------|--------|
-| **Coordinator** | primary | Web渗透测试主控制器 | 工作流调度、状态管理、异常处理、进度评估 | — |
-| Navigator | subagent | 页面导航与探索专家 | Chrome管理、页面导航、页面分析、API发现、Cookie同步 | Coordinator |
+| **Coordinator** | primary | Web渗透测试主控制器 | 工作流调度、状态管理、异常处理、进度评估、全貌测绘规划 | — |
+| Navigator | subagent | 页面导航与探索专家 | Chrome管理、全貌测绘、模块深挖、角色可达性验证、页面分析、API发现、Cookie同步 | Coordinator |
 | Form | subagent | 表单处理与登录专家 | 表单识别、智能填写、批量登录执行 | Coordinator |
 | Security | subagent | 安全测试执行专家 | IDOR测试、注入测试、历史记录分析、BurpBridge集成 | Coordinator |
 | Analyzer | subagent | 安全测试结果分析专家 | 重放结果分析、漏洞判定、严重性评级 | Coordinator |
@@ -86,15 +86,28 @@
 
 #### Coordinator
 - **角色**：Web渗透测试主控制器
-- **功能**：工作流调度、状态管理、异常处理、进度评估
+- **功能**：工作流调度、状态管理、异常处理、进度评估、全貌测绘规划
 - **目的**：协调多Agent完成Web应用的自动化安全测试
 - **核心原则**：Coordinator决定"做什么"和"谁来做"，将具体工作交给subagent
 
 #### Navigator
 - **角色**：页面导航与探索专家
-- **功能**：Chrome实例管理、页面导航、页面分析、API发现、Cookie同步
+- **功能**：Chrome实例管理、全貌测绘、模块深挖、角色可达性验证、页面分析、API发现、Cookie同步
 - **目的**：自主探索Web应用，发现页面和API端点，返回详细报告
-- **特点**：已合并Scout功能，探索一定量页面后主动退出；统一管理浏览器状态（含Cookie）
+- **特点**：已合并Scout功能；首轮先执行 `SITE_SURVEY` 全貌测绘，再按 `continue_survey`、`deep_explore_module`、`verify_role_access` 定向补测；统一管理浏览器状态（含Cookie）
+
+### Survey-First Workflow（全貌测绘优先）
+
+- 新会话默认先进入 `SITE_SURVEY`
+- `Navigator` 首轮执行 `survey_site`
+- 后续可由 `Coordinator` 调度：
+  - `continue_survey`
+  - `deep_explore_module`
+  - `verify_role_access`
+- 测绘上下文需显式传递：
+  - `allowed_hosts`
+  - `role_access_matrix`
+  - `coverage_gaps`
 
 #### Form
 - **角色**：表单处理与登录专家
@@ -200,7 +213,7 @@ browser-use doctor
 
 ```
 Priority 1: Browser Automation
-└─ browser-use CLI + scripts/browser-use-utf8.ps1 (Chrome CDP, 多实例管理, attach兼容) ← Navigator使用
+└─ browser-use CLI + scripts/browser-use-utf8.ps1 + scripts/start-managed-chrome.ps1 (Chrome CDP, 多实例管理, attach兼容, 固定启动参数) ← Navigator使用
 
 Priority 2: Security Testing
 ├─ BurpBridge MCP (请求同步、重放、认证上下文)
@@ -215,7 +228,7 @@ Priority 3: Data Management
 
 | Agent | 推荐工具 | 要求 |
 |-------|---------|---------|
-| Navigator | browser-use CLI + wrapper | Windows 下优先使用 `scripts/browser-use-utf8.ps1`；首次 attach 才允许 `--cdp-url` |
+| Navigator | browser-use CLI + wrapper | Windows 下优先使用 `scripts/browser-use-utf8.ps1`；Chrome 启动优先使用 `scripts/start-managed-chrome.ps1`；首次 attach 才允许 `--cdp-url` |
 | Form | browser-use CLI + wrapper | 以 `session_name` 为主，默认复用会话，不重复传 `--cdp-url` |
 | Security | BurpBridge MCP | — |
 | Analyzer | Read/Grep工具 | 禁止执行任何操作（仅分析数据） |

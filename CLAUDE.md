@@ -136,6 +136,7 @@ powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session 
 - `session_name` 是浏览器操作主键
 - `--cdp-url` 仅用于 bootstrap/repair attach，不应写成所有命令的固定前缀
 - Windows 下优先通过 `scripts/browser-use-utf8.ps1` 执行，以自动处理 attach 兼容和 UTF-8 输出
+- Chrome 启动优先通过 `scripts/start-managed-chrome.ps1` 执行，以固定受管实例参数
 
 ### 核心命令
 
@@ -151,12 +152,11 @@ powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session 
 
 ```powershell
 # Windows
-$chromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe"
-Start-Process $chromePath -ArgumentList @(
-  "--proxy-server=http://127.0.0.1:8080",
-  "--remote-debugging-port=9222",
-  "--user-data-dir=C:\temp\chrome-{session_name}"
-)
+powershell -ExecutionPolicy Bypass -File scripts/start-managed-chrome.ps1 `
+  -CdpPort 9222 `
+  -UserDataDir C:\temp\chrome-{session_name} `
+  -ProxyServer http://127.0.0.1:8080 `
+  -StartUrl https://www.example.com/
 ```
 
 ### 多实例管理

@@ -15,7 +15,7 @@
   "default_agent": "Coordinator",
   "agent": {
     "Coordinator": {
-      "description": "Coordinator: Web渗透测试主控制器，通过@方式调用子Agent，串行执行测试流程。",
+      "description": "Coordinator: Web渗透测试主控制器，通过@方式调用子Agent，执行 survey-first 测试流程与全貌测绘规划。",
       "mode": "primary",
       "temperature": 0.2,
       "prompt": "{file:.opencode/agents/coordinator.md}",
@@ -39,6 +39,8 @@
           "browser-use *": "allow",
           ".\\scripts\\browser-use-utf8.ps1 *": "allow",
           "scripts/browser-use-utf8.ps1 *": "allow",
+          ".\\scripts\\start-managed-chrome.ps1 *": "allow",
+          "scripts/start-managed-chrome.ps1 *": "allow",
           "docker *": "allow",
           "curl *": "allow"
         },
@@ -48,7 +50,7 @@
       }
     },
     "navigator": {
-      "description": "Navigator Agent: 受管 Chrome 管理、页面导航、页面分析、API线索发现、Cookie同步与探索进度汇报。",
+      "description": "Navigator Agent: 受管 Chrome 管理、全貌测绘、模块深挖、角色可达性验证、页面分析、API线索发现、Cookie同步与探索进度汇报。",
       "mode": "subagent",
       "temperature": 0.1,
       "prompt": "{file:.opencode/agents/navigator.md}",
@@ -63,7 +65,9 @@
           "*": "ask",
           "browser-use *": "allow",
           ".\\scripts\\browser-use-utf8.ps1 *": "allow",
-          "scripts/browser-use-utf8.ps1 *": "allow"
+          "scripts/browser-use-utf8.ps1 *": "allow",
+          ".\\scripts\\start-managed-chrome.ps1 *": "allow",
+          "scripts/start-managed-chrome.ps1 *": "allow"
         },
         "skill": {
           "*": "allow"
@@ -86,7 +90,9 @@
           "*": "ask",
           "browser-use *": "allow",
           ".\\scripts\\browser-use-utf8.ps1 *": "allow",
-          "scripts/browser-use-utf8.ps1 *": "allow"
+          "scripts/browser-use-utf8.ps1 *": "allow",
+          ".\\scripts\\start-managed-chrome.ps1 *": "allow",
+          "scripts/start-managed-chrome.ps1 *": "allow"
         },
         "skill": {
           "*": "allow"

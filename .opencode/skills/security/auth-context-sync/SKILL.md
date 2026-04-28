@@ -19,13 +19,13 @@ description: "认证上下文同步。Navigator 将真实 Cookie 同步到 BurpB
 2. Navigator 对对应 session 执行：
 
 ```bash
-browser-use --session admin_001 cookies get --json
+browser-use --session admin_001 --json cookies get
 ```
 
 Windows 建议：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session admin_001 cookies get --json
+powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session admin_001 --json cookies get
 ```
 
 3. Navigator 更新 `result/sessions.json` 中该账号的 `auth_context`。
@@ -45,7 +45,7 @@ mcp__burpbridge__configure_authentication_context(input: {
 ## 规则
 
 - 所有 BurpBridge MCP 调用必须使用 `input` 包装。
-- Cookie 值必须来自 `browser-use cookies get --json` 的真实输出。
+- Cookie 值必须来自 `browser-use --json cookies get` 的真实输出。
 - 若页面登录成功但 Cookie 未变化，也应记录该状态，不要伪造字段。
 
 ## 角色管理

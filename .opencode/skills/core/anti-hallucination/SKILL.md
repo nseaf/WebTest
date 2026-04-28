@@ -63,7 +63,7 @@ Every finding MUST be based on actual data read via tools
   - 不要编造 Authorization: Bearer xxx
   
 ✓ 必须来自browser-use实际输出
-  - 使用 browser-use cookies get --json 获取实际Cookie
+  - 使用 browser-use --json cookies get 获取实际Cookie
   - 从 sessions.json 读取已登录账号的Cookie
 ```
 
@@ -135,7 +135,7 @@ Every finding MUST be based on actual data read via tools
 6. 基于实际响应判定漏洞
 
 ✓ 正确示例（Cookie同步）：
-1. 使用 browser-use cookies get --json 获取实际Cookie
+1. 使用 browser-use --json cookies get 获取实际Cookie
 2. 记录到 sessions.json
 3. 使用 configure_authentication_context 同步到BurpBridge
 4. 使用实际Cookie进行后续测试

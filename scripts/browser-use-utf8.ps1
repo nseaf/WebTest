@@ -88,9 +88,114 @@ function Resolve-AttachMode {
   return "reuse"
 }
 
+function Get-CommandIndex {
+  param(
+    [string[]] $Args
+  )
+
+  $index = 0
+
+  while ($index -lt $Args.Length) {
+    $token = $Args[$index]
+
+    switch ($token) {
+      "--session" {
+        $index += 2
+        continue
+      }
+      "--cdp-url" {
+        $index += 2
+        continue
+      }
+      "--attach-mode" {
+        $index += 2
+        continue
+      }
+      "--json" {
+        $index += 1
+        continue
+      }
+      default {
+        if ($token.StartsWith("--")) {
+          $index += 1
+          continue
+        }
+
+        return $index
+      }
+    }
+  }
+
+  return $Args.Length
+}
+
+function Split-GlobalAndCommandArgs {
+  param(
+    [System.Collections.Generic.List[string]] $Args
+  )
+
+  $globalArgs = [System.Collections.Generic.List[string]]::new()
+  $commandArgs = [System.Collections.Generic.List[string]]::new()
+  $index = 0
+
+  while ($index -lt $Args.Count) {
+    $token = $Args[$index]
+
+    switch ($token) {
+      "--session" {
+        $globalArgs.Add($token)
+        if ($index + 1 -lt $Args.Count) {
+          $globalArgs.Add($Args[$index + 1])
+        }
+        $index += 2
+        continue
+      }
+      "--cdp-url" {
+        $globalArgs.Add($token)
+        if ($index + 1 -lt $Args.Count) {
+          $globalArgs.Add($Args[$index + 1])
+        }
+        $index += 2
+        continue
+      }
+      "--attach-mode" {
+        $globalArgs.Add($token)
+        if ($index + 1 -lt $Args.Count) {
+          $globalArgs.Add($Args[$index + 1])
+        }
+        $index += 2
+        continue
+      }
+      "--json" {
+        $index += 1
+        continue
+      }
+      default {
+        if ($token.StartsWith("--")) {
+          $globalArgs.Add($token)
+          $index += 1
+          continue
+        }
+
+        for ($remaining = $index; $remaining -lt $Args.Count; $remaining++) {
+          $commandArgs.Add($Args[$remaining])
+        }
+
+        break
+      }
+    }
+  }
+
+  return [pscustomobject]@{
+    GlobalArgs = $globalArgs
+    CommandArgs = $commandArgs
+  }
+}
+
 $sessionName = $null
 $cdpUrl = $null
 $explicitAttachMode = $null
+$jsonIndices = [System.Collections.Generic.List[int]]::new()
 
 for ($i = 0; $i -lt $BrowserUseArgs.Length; $i++) {
   $arg = $BrowserUseArgs[$i]
@@ -117,6 +222,10 @@ for ($i = 0; $i -lt $BrowserUseArgs.Length; $i++) {
       }
       continue
     }
+    "--json" {
+      $jsonIndices.Add($i)
+      continue
+    }
   }
 }
 
@@ -130,9 +239,23 @@ if ($attachMode -notin $validAttachModes) {
 }
 
 $normalizedArgs = [System.Collections.Generic.List[string]]::new()
+$hadJson = $jsonIndices.Count -gt 0
+$originalCommandIndex = Get-CommandIndex -Args $BrowserUseArgs
+$jsonWasMisplaced = $false
+
+foreach ($jsonIndex in $jsonIndices) {
+  if ($jsonIndex -ge $originalCommandIndex) {
+    $jsonWasMisplaced = $true
+    break
+  }
+}
 
 for ($i = 0; $i -lt $BrowserUseArgs.Length; $i++) {
   $arg = $BrowserUseArgs[$i]
+
+  if ($arg -eq "--json") {
+    continue
+  }
 
   if ($arg -eq "--attach-mode") {
     $i++
@@ -158,6 +281,29 @@ for ($i = 0; $i -lt $BrowserUseArgs.Length; $i++) {
   }
 
   $normalizedArgs.Add($arg)
+}
+
+if ($hadJson) {
+  $splitArgs = Split-GlobalAndCommandArgs -Args $normalizedArgs
+  $reorderedArgs = [System.Collections.Generic.List[string]]::new()
+
+  foreach ($token in $splitArgs.GlobalArgs) {
+    $reorderedArgs.Add($token)
+  }
+
+  $reorderedArgs.Add("--json")
+
+  foreach ($token in $splitArgs.CommandArgs) {
+    $reorderedArgs.Add($token)
+  }
+
+  $normalizedArgs = $reorderedArgs
+
+  if ($jsonWasMisplaced) {
+    [Console]::Error.WriteLine("[browser-use-utf8] Normalized trailing --json to the browser-use global flag position.")
+  } elseif ($jsonIndices.Count -gt 1) {
+    [Console]::Error.WriteLine("[browser-use-utf8] Collapsed duplicate --json flags into a single global flag.")
+  }
 }
 
 if (($attachMode -eq "bootstrap" -or $attachMode -eq "repair") -and [string]::IsNullOrWhiteSpace($cdpUrl)) {

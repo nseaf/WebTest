@@ -127,8 +127,11 @@ Entry: 加载 Skills → 验证环境 → 建立会话基础能力
    - 门控: auto_sync_status.enabled = true
 
 4. @navigator -> create_instance
-   - 为每个账号创建或恢复受管实例
-   - 获取 session_name / attach_status / active_tab_index
+   - 为每个账号启动普通可见 Chrome 实例，再 attach 到 browser-use session
+   - 强制输入: account_id / role / username / cdp_port / user_data_dir / proxy_server / accounts_config_path / total_accounts / role_mapping
+   - 强制输出: cdp_url / session_name / chrome_pid / attach_status / attach_mode / active_tab_index
+   - 首次 attach 必须使用 attach_mode=bootstrap，attach 成功后统一切换到 reuse
+   - 禁止把 browser-use 默认无头 session 视为 create_instance 成功
 
 5. @form -> execute_logins (如需要)
    - 批量登录
@@ -146,6 +149,7 @@ Exit: State -> SITE_SURVEY
 - [ ] BurpBridge 健康检查通过
 - [ ] auto_sync 已启用并验证
 - [ ] Chrome 实例已创建
+- [ ] 创建的是普通可见 Chrome 窗口，而非 headless fallback
 - [ ] 登录已完成（如需要）
 - [ ] Cookie 已同步到 BurpBridge（如有成功登录）
 
@@ -289,6 +293,7 @@ Exit: State -> END
 [Attach Mode] {bootstrap|reuse|repair}
 [Active Tab] {active_tab_index}
 [Exploration Goal] {test_focus}
+[Visible Browser] {required|verified}
 [Allowed Hosts] {target_host + approved subdomains}
 [Survey Scope] {breadth_first|gap_fill|module_deep_dive|role_access_check}
 [Module Targets] {module names or []}
@@ -315,7 +320,7 @@ Exit: State -> END
 
 | task_type | 用途 |
 |-----------|------|
-| `create_instance` | 创建受管 Chrome 实例 |
+| `create_instance` | 创建受管、可见、非无头的 Chrome 实例并完成 CDP attach |
 | `survey_site` | 首轮全站 breadth-first 测绘 |
 | `continue_survey` | 回补模块/入口缺口 |
 | `deep_explore_module` | 深挖指定模块或子模块 |
@@ -362,6 +367,8 @@ Exit: State -> END
     "session_name": "admin_001",
     "attach_mode": "reuse",
     "attach_status": "attached",
+    "cdp_url": "http://127.0.0.1:9222",
+    "chrome_pid": 12345,
     "active_tab_index": 0,
     "last_verified_url": "https://example.com/dashboard"
   },
@@ -413,6 +420,7 @@ Exit: State -> END
 
 - `Navigator` 已完成本地两轮恢复且仍失败时，Coordinator 才升级处理。
 - `EXTERNAL_DOMAIN_SKIPPED` 和 `ACCESS_SCOPE_BLOCKED` 默认是非致命异常，继续主流程。
+- `create_instance` 如果没有拿到可见 Chrome 的 `cdp_url` 和 `chrome_pid`，必须视为失败或 repair，不允许静默降级为 headless session。
 - 任何需要跨 Agent 协作的恢复，都必须保留真实证据、已尝试动作和下一步建议。
 
 ## 7. 进度管理
@@ -513,6 +521,55 @@ INIT -> SITE_SURVEY -> EVALUATION
 | 页面记录 | `MongoDB webtest.pages` | 访问页面 |
 | 漏洞记录 | `MongoDB webtest.findings` | 发现漏洞 |
 | 测试报告 | `result/{project}_report_{date}.md` | 最终报告 |
+
+### create_instance 完整调用示例
+
+```text
+@navigator
+[TASK] 创建可见 Chrome 实例并完成 CDP attach
+[FORBIDDEN] 不得使用 headless 浏览器或 browser-use 默认无头 session 作为完成态
+
+---Agent Contract---
+[Session ID] session_20260425_001
+[Target Host] example.com
+[Task Type] create_instance
+[Session Name] admin_001
+[Attach Mode] bootstrap
+[Active Tab] 0
+[Exploration Goal] survey-first bootstrap
+[Visible Browser] required
+[Allowed Hosts] ["example.com","sso.example.com"]
+[Survey Scope] breadth_first
+[Module Targets] []
+[Role Targets] []
+[Coverage Gaps] []
+[Seed Modules] ["dashboard","profile","workflow"]
+---End Contract---
+
+任务: create_instance
+
+请先启动一个普通可见的 Chrome 窗口，再通过 CDP 完成 attach。禁止直接创建 browser-use 默认无头 session。
+
+账号信息:
+- account_id: admin_001
+- role: admin
+- username: admin@example.com
+
+Chrome 配置:
+- cdp_port: 9222
+- user_data_dir: C:\temp\chrome-admin-001
+- proxy_server: http://127.0.0.1:8080
+
+账号配置文件信息:
+- accounts_config_path: config/accounts.json
+- total_accounts: 3
+- role_mapping: { "admin": ["admin_001"], "user": ["user_001", "user_002"] }
+
+输出要求:
+- 返回 cdp_url, session_name, chrome_pid
+- 返回 attach_status, attach_mode, active_tab_index
+- 明确说明 visible browser verified = true
+```
 
 ## 10. 配置参数
 

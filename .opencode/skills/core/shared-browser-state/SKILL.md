@@ -30,7 +30,8 @@ powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session 
   - 统一 UTF-8 输出
   - 识别 `--attach-mode`
   - 在可复用 session 上自动忽略重复传入的 `--cdp-url`
-  - 输出兼容期提示，但不污染 `browser-use --json` 的 stdout
+  - 自动把尾部旧写法 `... --json` 规范化为全局 `--json`
+  - 输出兼容期提示，但不污染 `browser-use --json ...` 的 stdout
 
 ### 3. attach 模式定义
 
@@ -56,6 +57,16 @@ powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 `
   --session admin_001 `
   --cdp-url http://localhost:9222 `
   open https://example.com
+```
+
+### 启动受管 Chrome
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/start-managed-chrome.ps1 `
+  -CdpPort 9222 `
+  -UserDataDir C:\temp\chrome-admin-001 `
+  -ProxyServer http://127.0.0.1:8080 `
+  -StartUrl https://example.com/
 ```
 
 ### 复用已 attach session
