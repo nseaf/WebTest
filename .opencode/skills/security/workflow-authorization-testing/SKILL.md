@@ -125,6 +125,32 @@ const approvalRequests = await mcp__burpbridge__list_paginated_http_history(inpu
 });
 ```
 
+```javascript
+// 若 workflow 节点被标记为高危，可额外触发独立 reverse probe
+const page1 = await mcp__burpbridge__list_paginated_http_history(input: {
+  "host": "target.example.com",
+  "method": "POST",
+  "path": "/api/workflow/*",
+  "page": 1,
+  "page_size": 50
+});
+
+const lastPage = Math.ceil(page1.total / page1.page_size);
+
+for (let page = lastPage; page >= Math.max(1, lastPage - 2); page--) {
+  const recentRequests = await mcp__burpbridge__list_paginated_http_history(input: {
+    "host": "target.example.com",
+    "method": "POST",
+    "path": "/api/workflow/*",
+    "page": page,
+    "page_size": 50
+  });
+
+  const newestFirst = [...recentRequests.items].reverse();
+  // 只用于补抓近期审批请求，不更新主扫描游标
+}
+```
+
 **步骤2：获取请求详情**
 
 ```javascript

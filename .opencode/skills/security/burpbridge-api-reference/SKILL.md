@@ -136,6 +136,13 @@ Content-Type: application/json
 | `status_code` | `null` | **推荐**：无状态码过滤 |
 | `require_response` | `true` | **推荐**：仅同步有响应的请求 |
 
+**项目工作流约束**：
+
+- 仅在 `Security.init_security` 阶段调用 `configure_auto_sync(enabled=true)`
+- 常规测试阶段禁止主动关闭自动同步
+- 如果检测到自动同步关闭或配置漂移，应创建 `AUTO_SYNC_DRIFT` 事件并进入 repair 分支
+- 不要把“关闭再打开自动同步”当作日常恢复动作
+
 ---
 
 ### 3. 获取自动同步状态
@@ -201,6 +208,16 @@ GET /history?host=api.example.com&path=/api/*&method=GET&page=1&page_size=20
   ]
 }
 ```
+
+**项目读取约束**：
+
+- 主扫描使用顺序分页：`page=1 -> 2 -> 3`，保持从旧到新的完整覆盖
+- 不要假设工具支持 `timestamp > since_timestamp` 这类服务端过滤
+- 高危接口允许独立执行 `reverse_probe`
+  - 先读取 `page=1` 获取 `total` 和 `page_size`
+  - 计算最后一页后从最新页向前短窗口回查
+  - reverse probe 结果不得推进主扫描游标
+- 当 MCP 分页表现异常时，可只读查询 MongoDB `burpbridge.history` 作为兜底校验
 
 ---
 

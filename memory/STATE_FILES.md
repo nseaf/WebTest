@@ -88,6 +88,7 @@
 |----------|-----------|--------|--------------|
 | CAPTCHA_DETECTED | Form/Navigator | critical | ✅ 是 |
 | SESSION_EXPIRED | Navigator/Security | high | ❌ 否 |
+| AUTO_SYNC_DRIFT | Security | high | ❌ 否 |
 | LOGIN_FAILED | Form | high | ❌ 否 |
 | EXPLORATION_SUGGESTION | Security/Analyzer | normal | ❌ 否 |
 | VULNERABILITY_FOUND | Security | high | ❌ 否 |
@@ -185,6 +186,46 @@ function createEvent(eventType, sourceAgent, priority, payload) {
   "cookies": ["session=abc123", "token=xyz789"],
   "relogin_attempts": 0,
   "max_relogin_attempts": 3
+}
+```
+
+### 运行时控制字段
+
+```json
+{
+  "runtime_control": {
+    "auto_sync_expected": true,
+    "auto_sync_verified_at": "2026-04-28T10:02:00Z",
+    "auto_sync_last_repair_at": null,
+    "auto_sync_owner": "security"
+  }
+}
+```
+
+### Security 历史扫描状态
+
+```json
+{
+  "history_progress": {
+    "target.example.com|GET|/api/*": {
+      "main_scan": {
+        "current_page": 3,
+        "last_processed_timestamp_ms": 1714090000000,
+        "last_processed_history_id": "65f1a2b3c4d5e6f7a8b9c0d1",
+        "last_scan_at": "2026-04-28T10:10:00Z"
+      },
+      "reverse_probes": [
+        {
+          "trigger_reason": "sensitive-api-detection:high",
+          "target_pattern": "/api/workflow/*",
+          "started_from_page": 9,
+          "pages_checked": 2,
+          "matched_history_ids": ["65f1a2b3c4d5e6f7a8b9c0d9"],
+          "finished_at": "2026-04-28T10:12:00Z"
+        }
+      ]
+    }
+  }
 }
 ```
 

@@ -47,6 +47,13 @@
     "last_sync_to_burpbridge": null,
     "sync_status": "not_synced"
   },
+  "runtime_control": {
+    "auto_sync_expected": false,
+    "auto_sync_verified_at": null,
+    "auto_sync_last_repair_at": null,
+    "auto_sync_owner": null
+  },
+  "history_progress": {},
   "session_schema": {
     "account_id": "账号ID，对应 config/accounts.json 中的账号",
     "role": "用户角色: admin|user|guest",
@@ -56,7 +63,12 @@
     "auth_context.headers": "认证相关的 HTTP 头部",
     "last_activity": "最后活动时间 (ISO 8601)",
     "expires_at": "会话过期时间 (ISO 8601)",
-    "login_attempts": "登录尝试次数"
+    "login_attempts": "登录尝试次数",
+    "runtime_control.auto_sync_expected": "Security 是否要求当前会话自动同步必须开启",
+    "runtime_control.auto_sync_verified_at": "最后一次自动同步验证时间 (ISO 8601)",
+    "runtime_control.auto_sync_last_repair_at": "最后一次自动同步 repair 时间 (ISO 8601)",
+    "runtime_control.auto_sync_owner": "负责自动同步的 Agent，固定为 security",
+    "history_progress": "Security 历史主扫描与高危反向追查的游标状态"
   },
   "status_definitions": {
     "logged_out": "未登录状态",

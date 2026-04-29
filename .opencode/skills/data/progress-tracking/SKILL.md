@@ -121,6 +121,26 @@ security_status: pending|in_progress|completed|blocked
     tested: 2,
     untested: ["api_003", "api_004", "api_005"]
   },
+  history_progress: {
+    "target.example.com|GET|/api/*": {
+      main_scan: {
+        current_page: 3,
+        last_processed_timestamp_ms: 1714090000000,
+        last_processed_history_id: "65f1a2b3c4d5e6f7a8b9c0d1",
+        last_scan_at: ISODate("2026-04-28T10:10:00Z")
+      },
+      reverse_probes: [
+        {
+          trigger_reason: "sensitive-api-detection:high",
+          target_pattern: "/api/workflow/*",
+          started_from_page: 9,
+          pages_checked: 2,
+          matched_history_ids: ["65f1a2b3c4d5e6f7a8b9c0d9"],
+          finished_at: ISODate("2026-04-28T10:12:00Z")
+        }
+      ]
+    }
+  },
   survey_summary: {
     modules_total: 6,
     modules_completed: 4,
@@ -132,6 +152,13 @@ security_status: pending|in_progress|completed|blocked
 ```
 
 ## 进度判定重点
+
+## 历史扫描规则
+
+- `main_scan` 是 Security 的默认主线，必须按页顺序从旧到新推进
+- `reverse_probes` 只在高危接口或高风险模块触发时创建
+- reverse probe 的页码、命中记录和结束时间必须独立记录
+- reverse probe 不得覆盖 `main_scan.current_page` 或其 watermark
 
 ### Survey
 

@@ -128,7 +128,8 @@ const gate1 = {
     "accounts.json 已生成",
     "Chrome 实例启动成功",
     "BurpBridge 健康检查通过",
-    "auto_sync 已启用",
+    "auto_sync 已启用并验证",
+    "sessions.runtime_control.auto_sync_expected = true",
     "登录成功（如需要）"
   ],
   onPass: () => updateSessionState("SITE_SURVEY", "gate1 passed")

@@ -18,6 +18,7 @@ description: "Security Agent错误处理方法论。BurpBridge调用失败处理
 | 角色未配置 | 跳过该角色的测试，记录警告 |
 | 重放失败 | 记录错误，继续其他测试 |
 | 会话过期 | 创建SESSION_EXPIRED事件 |
+| 自动同步漂移 | 创建AUTO_SYNC_DRIFT事件，进入repair |
 
 ---
 
@@ -47,6 +48,19 @@ description: "Security Agent错误处理方法论。BurpBridge调用失败处理
      - 继续探索任务，暂停安全测试
 ```
 
+### 2.1 自动同步漂移
+
+```
+错误: get_auto_sync_status显示自动同步关闭或配置漂移
+处理:
+  1. 创建AUTO_SYNC_DRIFT事件，记录期望配置与实际状态
+  2. 进入repair分支，最多重试一次
+  3. repair期间禁止先关闭再重开自动同步
+  4. 若repair后仍异常:
+     - 暂停依赖历史捕获的安全测试
+     - 通知Coordinator与用户
+```
+
 ### 3. 重放失败
 
 ```
@@ -65,6 +79,7 @@ description: "Security Agent错误处理方法论。BurpBridge调用失败处理
 ┌─────────────────────────────────────────────────────────────────┐
 │  1. 调用configure_auto_sync启用同步                              │
 │     enabled: true, host: target_host                             │
+│     仅限 init_security 阶段                                       │
 └─────────────────────────────────────────────────────────────────┘
                                │
                                ↓
@@ -77,6 +92,7 @@ description: "Security Agent错误处理方法论。BurpBridge调用失败处理
 ┌─────────────────────────────────────────────────────────────────┐
 │  3. 检查同步状态                                                  │
 │     get_auto_sync_status()                                       │
+│     记录 auto_sync_verified_at                                   │
 └─────────────────────────────────────────────────────────────────┘
                                │
                ┌───────────────┴───────────────┐

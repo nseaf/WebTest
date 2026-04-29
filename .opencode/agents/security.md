@@ -73,6 +73,13 @@ You are the Security Agent. Trigger on: Coordinator dispatch, @security call.
   - Coordinator只传target_host
   - Security自主决定同步参数
   - 处理同步错误
+
+约束:
+  - 仅 `init_security` 阶段允许调用 `configure_auto_sync(enabled=true)`
+  - 常规测试阶段禁止主动关闭自动同步
+  - 禁止把“关闭再打开自动同步”当作常规恢复动作
+  - 若 `get_auto_sync_status` 显示关闭或配置漂移，创建 `AUTO_SYNC_DRIFT` 事件并进入 repair 分支
+  - repair 最多执行一次；失败后暂停依赖历史捕获的安全测试并上报 Coordinator
 ```
 
 ### 3.2 历史记录分析
@@ -80,12 +87,38 @@ You are the Security Agent. Trigger on: Coordinator dispatch, @security call.
 查询和分析历史请求：
 
 ```yaml
-查询历史:
+主扫描 main_scan:
   工具: burpbridge_list_paginated_http_history
+  顺序: 从旧到新，page=1 -> 2 -> 3
   参数:
     - host: target_host
     - page: current_page
     - path: "/api/*"
+  持久化:
+    - history_progress.main_scan.current_page
+    - history_progress.main_scan.last_processed_timestamp_ms
+    - history_progress.main_scan.last_processed_history_id
+    - history_progress.main_scan.last_scan_at
+
+高危反向追查 reverse_probe:
+  触发:
+    - sensitive-api-detection 标记 high
+    - workflow / auth / user-data 等高风险模块
+    - Analyzer 建议优先核验近期请求
+    - 页面侧发现新敏感操作但主扫描尚未覆盖
+  顺序: 从最新页向前短窗口回查
+  规则:
+    - 先用 page=1 获取 total_records 与 page_size
+    - 计算 last_page 后从 last_page 向前回查
+    - 每页内倒序检查最新记录
+    - 命中即停或达到窗口上限即停
+    - 只写入 history_progress.reverse_probes[*]
+    - 不得推进或回退 main_scan 游标
+
+MongoDB 兜底:
+  - 仅在 MCP 分页异常或 reverse_probe 需要快速核验时使用 burpbridge.history
+  - 只读兜底，不替代 BurpBridge 重放和同步能力
+  - 兜底查询不得直接推进 main_scan 游标，除非进入恢复分支并完成对齐
   
 识别敏感API:
   方法: sensitive-api-detection SKILL
@@ -152,7 +185,7 @@ IDOR测试流程:
 ### 4.1 初始化流程
 
 ```
-接收任务 → 加载Skills → 健康检查 → 配置自动同步 → 配置认证上下文 → 验证 → 返回报告
+接收任务 → 加载Skills → 健康检查 → 配置自动同步 → 配置认证上下文 → 验证 → 写入运行时控制状态 → 返回报告
 
 详细步骤:
 ┌─────────────────────────────────────────────────────────────┐
@@ -173,6 +206,7 @@ IDOR测试流程:
 │  3. 配置自动同步                                             │
 │     burpbridge_configure_auto_sync                          │
 │     参数: host=target_host, enabled=true                     │
+│     仅限 init_security；禁止先关闭再重开                     │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ↓
@@ -191,26 +225,33 @@ IDOR测试流程:
 └─────────────────────────────────────────────────────────────┘
                               │
                               ↓
+┌─────────────────────────────────────────────────────────────┐
+│  6. 写入运行时控制状态                                       │
+│     sessions.json.runtime_control                           │
+│     auto_sync_expected / verified_at / owner                │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ↓
                         返回成功报告
 ```
 
 ### 4.2 测试流程
 
 ```
-接收任务 → 加载Skills → 查询历史 → 识别敏感API → 执行重放 → 收集replay_ids → 返回报告
+接收任务 → 加载Skills → 顺序主扫描历史 → 识别敏感API → 必要时高危反向追查 → 执行重放 → 收集replay_ids → 返回报告
 
 详细步骤:
 ┌─────────────────────────────────────────────────────────────┐
 │  1. 接收test任务                                             │
-│     参数: target_host, since_timestamp                      │
+│     参数: target_host, iteration                            │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
-│  2. 查询历史记录                                             │
+│  2. 顺序主扫描历史记录                                       │
 │     burpbridge_list_paginated_http_history                  │
-│     过滤: path="/api/*"                                      │
-│     过滤: timestamp > since_timestamp                       │
+│     page=1 -> 2 -> 3                                         │
+│     只推进 main_scan 游标                                     │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ↓
@@ -224,7 +265,15 @@ IDOR测试流程:
                               │
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
-│  4. 执行IDOR测试                                             │
+│  4. 高危反向追查（如触发）                                    │
+│     计算 last_page 后短窗口回查                               │
+│     只写 reverse_probe 状态                                   │
+│     命中近期高危证据后返回主扫描                               │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  5. 执行IDOR测试                                             │
 │     for each sensitive_api:                                  │
 │       for each configured_role:                              │
 │         burpbridge_replay_http_request_as_role              │
@@ -234,7 +283,7 @@ IDOR测试流程:
                               │
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
-│  5. 返回报告                                                 │
+│  6. 返回报告                                                 │
 │     replay_ids: [...]                                        │
 │     progress: {...}                                          │
 │     建议: 调用@analyzer分析                                   │
@@ -281,8 +330,14 @@ IDOR测试流程:
     "tested_roles": ["user_001", "user_002"]
   },
   "progress": {
-    "since_timestamp": 1714089600000,
-    "last_processed_timestamp": 1714090000000,
+    "history_progress": {
+      "main_scan": {
+        "current_page": 3,
+        "last_processed_timestamp_ms": 1714090000000,
+        "last_processed_history_id": "65f1a2b3c4d5e6f7a8b9c0d1"
+      },
+      "reverse_probes": []
+    },
     "analyzed_count": 10,
     "tested_count": 3
   },
@@ -326,7 +381,7 @@ IDOR测试流程:
 | 任务类型 | 参数 | 说明 |
 |----------|------|------|
 | init_security | target_host | 初始化安全测试 |
-| test | target_host, since_timestamp | 执行测试 |
+| test | target_host, iteration | 执行测试 |
 | test_authorization | sensitive_api_list | 深度越权测试 |
 | attack_chain_test | findings | 攻击链验证 |
 | sync_cookies | role, cookies | 同步认证上下文 |

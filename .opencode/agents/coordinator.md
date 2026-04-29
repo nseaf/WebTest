@@ -125,6 +125,8 @@ Entry: 加载 Skills → 验证环境 → 建立会话基础能力
 3. @security -> init_security
    - 在创建 Chrome 实例前开启自动同步
    - 门控: auto_sync_status.enabled = true
+   - 禁止把关闭再打开自动同步当作常规恢复动作
+   - 若发现自动同步漂移，等待 Security 进入 repair 或上报 AUTO_SYNC_DRIFT
 
 4. @navigator -> create_instance
    - 为每个账号启动普通可见 Chrome 实例，再 attach 到 browser-use session
@@ -148,6 +150,7 @@ Exit: State -> SITE_SURVEY
 - [ ] MongoDB 运行正常
 - [ ] BurpBridge 健康检查通过
 - [ ] auto_sync 已启用并验证
+- [ ] auto_sync_expected=true 已写入运行时状态
 - [ ] Chrome 实例已创建
 - [ ] 创建的是普通可见 Chrome 窗口，而非 headless fallback
 - [ ] 登录已完成（如需要）

@@ -122,7 +122,6 @@ max(深度)
   "task": "test",
   "parameters": {
     "target_host": "edu.hicomputing.huawei.com",
-    "since_timestamp": 1714089600000,
     "iteration": 1
   }
 }
@@ -141,6 +140,8 @@ max(深度)
   - pending 状态的API
   - discovered 但未测试的敏感API
   - Navigator新发现的API
+  - 主扫描从 `history_progress.main_scan.current_page` 恢复
+  - 高危接口可触发独立 reverse probe，但不得修改主扫描游标
 ```
 
 ---

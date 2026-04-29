@@ -38,7 +38,8 @@ Every finding MUST be based on actual data read via tools
   
 ✓ 必须来自实际网络请求
 - 优先使用 BurpBridge list_paginated_http_history 获取实际请求
-  - 使用 BurpBridge list_paginated_http_history 查询历史
+  - 主扫描按 `page=1 -> 2 -> 3` 顺序查询历史
+  - 高危接口才允许执行独立 reverse probe
   - 记录实际的URL和参数
 ```
 

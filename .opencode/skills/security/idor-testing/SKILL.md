@@ -112,14 +112,16 @@ for (const api of sensitiveApis) {
 ### 获取历史请求
 
 ```javascript
-// 查询特定API的历史记录
-const history = await mcp__burpbridge__list_paginated_http_history(input: {
-  host: "www.example.com",
-  path: "/api/users/*",
-  method: "GET",
-  page: 1,
-  page_size: 20
-});
+// 主扫描：从旧到新顺序拉取分页
+for (let page = 1; page <= 3; page++) {
+  const history = await mcp__burpbridge__list_paginated_http_history(input: {
+    host: "www.example.com",
+    path: "/api/users/*",
+    method: "GET",
+    page,
+    page_size: 20
+  });
+}
 
 // 返回格式
 {
@@ -134,6 +136,32 @@ const history = await mcp__burpbridge__list_paginated_http_history(input: {
       timestampMs: 1710000000000
     }
   ]
+}
+```
+
+```javascript
+// 高危反向追查：独立于主扫描，不修改 main_scan 游标
+const firstPage = await mcp__burpbridge__list_paginated_http_history(input: {
+  host: "www.example.com",
+  path: "/api/users/*",
+  method: "GET",
+  page: 1,
+  page_size: 20
+});
+
+const lastPage = Math.ceil(firstPage.total / firstPage.page_size);
+
+for (let page = lastPage; page >= Math.max(1, lastPage - 2); page--) {
+  const recent = await mcp__burpbridge__list_paginated_http_history(input: {
+    host: "www.example.com",
+    path: "/api/users/*",
+    method: "GET",
+    page,
+    page_size: 20
+  });
+
+  const newestFirst = [...recent.items].reverse();
+  // 命中目标接口或证据后立即停止
 }
 ```
 
