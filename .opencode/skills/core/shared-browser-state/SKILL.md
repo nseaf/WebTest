@@ -30,8 +30,8 @@ powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session 
   - 统一 UTF-8 输出
   - 识别 `--attach-mode`
   - 在可复用 session 上自动忽略重复传入的 `--cdp-url`
-  - 自动把尾部旧写法 `... --json` 规范化为全局 `--json`
-  - 输出兼容期提示，但不污染 `browser-use --json ...` 的 stdout
+  - 自动规范化旧参数写法
+  - 输出兼容期提示，但不污染 `browser-use` 的 stdout
 
 ### 3. attach 模式定义
 

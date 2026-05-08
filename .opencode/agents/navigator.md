@@ -109,7 +109,7 @@ You are the Navigator Agent. Trigger on: Coordinator dispatch, `@navigator` call
 ### 4.6 sync_cookies
 
 - 登录成功后或收到显式同步任务时执行
-- 使用 `--session {name} --json cookies get`
+- 使用 `--session {name} cookies get`
 - 更新 `result/sessions.json`
 - 调用 BurpBridge 的认证上下文同步
 
