@@ -78,11 +78,13 @@ You are the Form Agent. Trigger on: Coordinator dispatch, @form call.
 批量登录流程:
   1. 从 accounts.json 读取所有待登录账号凭据
   2. 逐个复用 Navigator 已建立的 session_name
+  2.1 若任务来源于会话恢复，保留 resume_target_url / resume_context
   3. 先检测验证码、阻断弹窗和 tab 变化风险
   4. 执行输入与提交
   5. 提交后验证 URL、title、state、tab list
   6. 遇到验证码时记录但继续处理下一个账号
-  7. 汇总所有账号的登录结果
+  7. 若为恢复型登录，成功后返回原任务恢复所需上下文
+  8. 汇总所有账号的登录结果
 ```
 
 ### 3.4 主动恢复
@@ -97,6 +99,7 @@ You are the Form Agent. Trigger on: Coordinator dispatch, @form call.
 - modal/popup 阻断主流程
 
 只有需要人工验证码或跨 Agent 协作时才上报 Coordinator。
+若登录任务来自会话过期恢复，Form 不得改换 session_name，也不得把恢复失败解释为“当前模块不可探索”。
 
 ## 4. 工作流程
 
@@ -115,6 +118,7 @@ You are the Form Agent. Trigger on: Coordinator dispatch, @form call.
 - 兼容字段 `cdp_url` 仅记录，不作为常规命令前缀
 - 提交后必须执行 `tab list`
 - 登录成功后输出 `active_tab_index` 和 `final_url`
+- 若任务带有 `resume_target_url` 或 `resume_context`，必须在结果中原样返回，供 Navigator 恢复原任务
 
 ## 5. 输出格式标准
 
@@ -145,12 +149,14 @@ You are the Form Agent. Trigger on: Coordinator dispatch, @form call.
 
 | 任务类型 | 参数 | 说明 |
 |----------|------|------|
-| execute_logins | account_ids, session_name, cdp_url(optional) | 批量执行登录 |
+| execute_logins | account_ids, session_name, cdp_url(optional), resume_target_url(optional), resume_context(optional) | 批量执行登录 |
 | process_form | form_selector, session_name, cdp_url(optional) | 处理表单 |
 
 **参数说明**：
 - `session_name`: Navigator 创建并 attach 完成的 browser-use session
 - `cdp_url(optional)`: 兼容旧任务字段，仅用于 bootstrap-only 说明或 repair 场景
+- `resume_target_url(optional)`: 会话恢复成功后要回到的 URL 或入口
+- `resume_context(optional)`: 原任务上下文，如模块、pending_urls、task_type
 
 ## 7. 禁止事项
 

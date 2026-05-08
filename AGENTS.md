@@ -238,17 +238,29 @@ Priority 3: Data Management
 
 ## BurpBridge MCP 调用格式
 
-**重要**: 所有 BurpBridge MCP 工具需要 `input` 参数包装：
+**重要**: BurpBridge MCP 工具已移除 `input` 包装，需直接传参：
 
 ```javascript
 // 正确调用方式
-burpbridge_check_burp_health(input: {})
-burpbridge_list_paginated_http_history(input: { "host": "example.com" })
-burpbridge_replay_http_request_as_role(input: { "history_entry_id": "xxx", "target_role": "admin" })
+burpbridge_check_burp_health({})
+burpbridge_list_paginated_http_history({ "host": "example.com" })
+burpbridge_replay_http_request_as_role({ "history_entry_id": "xxx", "target_role": "admin" })
 
 // 错误调用方式
-burpbridge_check_burp_health()  // 缺少 input 参数
+burpbridge_list_paginated_http_history(input: { "host": "example.com" })  // ❌ 旧格式，禁止继续使用
 ```
+
+---
+
+## 不可逆操作测试流程
+
+对删除、审批通过、撤销、提交终止等不可逆操作，默认走“拦截优先”分支，而不是先执行再回查历史：
+
+1. `@security` 先调用 `start_one_shot_intercept({ "path": "/目标接口路径" })`
+2. `@navigator` 或 `@form` 使用有权限账号触发真实页面动作
+3. `@security` 调用 `get_one_shot_intercept_status({})`
+4. 若 `matched=true` 且存在 `matched_history_id`，立即调用 `replay_http_request_as_role({ "history_entry_id": "matched_history_id", "target_role": "低权限角色" })`
+5. 若未命中拦截，调用 `stop_one_shot_intercept({})` 主动关闭拦截，并将其记录为可恢复异常，不能误判为安全
 
 ---
 
@@ -264,6 +276,7 @@ burpbridge_check_burp_health()  // 缺少 input 参数
 安全原则:
 - 仅测试授权目标
 - 越权测试通过请求重放，不影响原流程状态
+- 删除、审批通过、撤销等不可逆操作优先通过单次拦截保存请求，再执行重放
 - Cookie/Token 脱敏显示
 - `session_name` 为浏览器操作主键，`cdp_url` 仅用于 bootstrap/repair
 ```

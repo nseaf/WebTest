@@ -183,18 +183,18 @@ powershell -ExecutionPolicy Bypass -File scripts/start-managed-chrome.ps1 `
 
 ### BurpBridge MCP 调用格式
 
-**重要**: 所有 BurpBridge MCP 工具需要 `input` 参数包装。
+**重要**: 所有 BurpBridge MCP 工具都直接传参，不再使用 `input` 包装。
 
 #### 正确调用方式
 
 ```javascript
 // 无参数工具
-mcp__burpbridge__check_burp_health(input: {})
-mcp__burpbridge__list_configured_roles(input: {})
+mcp__burpbridge__check_burp_health({})
+mcp__burpbridge__list_configured_roles({})
 
 // 带参数工具
-mcp__burpbridge__list_paginated_http_history(input: {"host": "example.com", "page": 1})
-mcp__burpbridge__replay_http_request_as_role(input: {"history_entry_id": "xxx", "target_role": "admin"})
+mcp__burpbridge__list_paginated_http_history({"host": "example.com", "page": 1})
+mcp__burpbridge__replay_http_request_as_role({"history_entry_id": "xxx", "target_role": "admin"})
 ```
 
 ### 使用场景
@@ -212,11 +212,12 @@ mcp__burpbridge__replay_http_request_as_role(input: {"history_entry_id": "xxx", 
 
 ### 测试策略
 
-流程审批场景采用**请求重放测试**策略：
-- 不实际执行审批操作
-- 捕获请求后用其他角色的Cookie重放
-- 分析响应判断是否存在越权漏洞
-- 不影响原流程状态
+流程审批场景采用**拦截优先 + 请求重放**策略：
+- 对删除、审批通过、撤销、提交终止等不可逆动作，先开启单次拦截
+- 再由有权限账号触发真实页面动作，让 BurpBridge 自动拦截并 drop 目标请求
+- 命中后使用返回的 `matched_history_id` 对其他角色重放
+- 若未命中，主动关闭拦截并记录为“未拦截成功”，不能直接判定安全
+- 通过该流程尽量避免真实业务状态不可逆变化
 
 ### 关键文件
 

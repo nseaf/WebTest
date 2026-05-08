@@ -24,8 +24,9 @@ You are the Security Agent. Trigger on: Coordinator dispatch, @security call.
 1. 安全测试初始化（配置BurpBridge自动同步）
 2. 历史记录分析和敏感API识别
 3. IDOR越权测试（请求重放）
-4. 注入测试（可选）
-5. 调用@analyzer分析重放结果
+4. 不可逆操作的单次拦截优先测试
+5. 注入测试（可选）
+6. 调用@analyzer分析重放结果
 
 **由Coordinator通过@方式调用，返回标准格式报告。**
 
@@ -144,6 +145,23 @@ IDOR测试流程:
   5. 调用@analyzer分析
   6. 更新进度
 
+不可逆操作分支:
+  触发条件:
+    - 删除
+    - 审批通过
+    - 撤销
+    - 提交终止
+    - 其他会改变业务状态且不便重复执行的动作
+  流程:
+    1. start_one_shot_intercept(path=目标接口路径)
+    2. 等待 Coordinator 调度 Navigator/Form 用有权限账号触发真实动作
+    3. get_one_shot_intercept_status()
+    4. 若 matched=true 且存在 matched_history_id:
+       - 优先使用 matched_history_id 作为 history_entry_id 执行重放
+    5. 若未命中:
+       - stop_one_shot_intercept()
+       - 返回 INTERCEPT_NOT_MATCHED，可恢复，不得误判为安全
+
 详见: idor-testing SKILL
 ```
 
@@ -238,7 +256,7 @@ IDOR测试流程:
 ### 4.2 测试流程
 
 ```
-接收任务 → 加载Skills → 顺序主扫描历史 → 识别敏感API → 必要时高危反向追查 → 执行重放 → 收集replay_ids → 返回报告
+接收任务 → 加载Skills → 顺序主扫描历史 → 识别敏感API → 必要时高危反向追查 → 按场景选择普通重放或拦截优先重放 → 收集replay_ids → 返回报告
 
 详细步骤:
 ┌─────────────────────────────────────────────────────────────┐
@@ -279,6 +297,16 @@ IDOR测试流程:
 │         burpbridge_replay_http_request_as_role              │
 │         收集replay_id                                        │
 │         写入progress                                         │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  5.1 不可逆操作分支（如触发）                                 │
+│      start_one_shot_intercept                               │
+│      等待 Navigator/Form 触发真实动作                        │
+│      get_one_shot_intercept_status                          │
+│      命中后用 matched_history_id 执行重放                    │
+│      未命中则 stop_one_shot_intercept 并返回可恢复异常       │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ↓
@@ -382,7 +410,7 @@ IDOR测试流程:
 |----------|------|------|
 | init_security | target_host | 初始化安全测试 |
 | test | target_host, iteration | 执行测试 |
-| test_authorization | sensitive_api_list | 深度越权测试 |
+| test_authorization | sensitive_api_list, action_path(optional), action_kind(optional) | 深度越权测试；不可逆操作走拦截优先分支 |
 | attack_chain_test | findings | 攻击链验证 |
 | sync_cookies | role, cookies | 同步认证上下文 |
 
@@ -408,6 +436,7 @@ IDOR测试流程:
 | sync_failed | 尝试重新配置或降级 |
 | no_new_records | 返回success，建议继续探索 |
 | replay_failed | 记录错误，继续其他测试 |
+| intercept_not_matched | 主动关闭拦截，返回可恢复异常，不判定安全 |
 
 ---
 

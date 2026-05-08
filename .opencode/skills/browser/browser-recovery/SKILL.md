@@ -13,6 +13,7 @@ description: "项目级浏览器恢复规则：session 配置冲突、tab 偏移
 - 优先小范围恢复，不扩大为“关闭所有实例”
 - 能在当前 session/tab 内恢复就不要重建实例
 - 恢复后必须重新验证 URL、title、state 和 tab 状态
+- title 中出现 `401`、`403`、`unauthorized`、`无权限` 只是提示信号，不足以单独判定失败或阻断
 - 默认最多尝试两轮本地恢复；第二轮失败再升级
 
 ## 恢复矩阵
@@ -55,8 +56,18 @@ description: "项目级浏览器恢复规则：session 配置冲突、tab 偏移
 ### 5. `REDIRECTED_TO_LOGIN`
 
 1. 验证 session 是否过期
-2. 通知 Form 用当前 `session_name` 重新登录
-3. 恢复后回到中断前 URL 或 `pending_urls`
+2. 记录当前 `session_name`、中断前 URL、入口、模块目标、`pending_urls`、任务类型
+3. 通知 Form 用当前 `session_name` 重新登录
+4. 恢复后回到中断前 URL、入口或 `pending_urls`
+5. 不允许因为登录过期而改做其他模块
+
+### 5.1 `AUTH_WARNING_PAGE_INTERACTIVE`
+
+1. 若 title 含 `401`、`403`、`unauthorized`、`无权限`，继续读取 `state`
+2. 必要时读取 `get html` 与 `eval`
+3. 若页面仍存在按钮、tab、列表、详情入口、查询区或只读数据区，继续边界内探索
+4. 同时记录“权限提示存在”和“可访问元素存在”两类证据
+5. 仅当 DOM 与交互证据都表明页面完全不可用时，才升级为 `ACCESS_SCOPE_BLOCKED`
 
 ### 6. `MODAL_BLOCKING_FLOW`
 

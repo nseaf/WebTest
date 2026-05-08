@@ -14,6 +14,7 @@ description: "表单处理方法论，基于 session 复用执行登录与填写
 - 所有 Windows 命令优先通过 `scripts/browser-use-utf8.ps1`
 - 提交后必须重新核验 URL、title、DOM 和 tab 状态
 - 遇到恢复型问题先调用 browser-recovery 规则，再决定是否上报 Coordinator
+- 若本次登录用于会话恢复，必须复用原 `session_name`，并把恢复上下文完整带回给 Navigator
 
 ## 标准命令模式
 
@@ -41,6 +42,10 @@ powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session 
    - 登录失败
    - 验证码待处理
    - 需恢复后重试
+8. 若为恢复型登录：
+   - 返回 `resume_target_url`
+   - 返回原任务 `resume_context`
+   - 不改换 session，不跳去别的模块
 
 ## 任务接口约定
 
@@ -51,6 +56,7 @@ powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session 
 
 - 如果旧任务仍传 `cdp_url`，可记录为“bootstrap-only compatibility field”
 - 不要据此重新把所有命令改回 `--cdp-url`
+- 如果任务带有 `resume_target_url` 或 `resume_context`，必须在结果中保留这两个字段
 
 ## 验证码与恢复
 

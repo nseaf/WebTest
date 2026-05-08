@@ -16,6 +16,7 @@ description: "页面导航方法论，包含显式 URL 导航、索引点击、t
 - 点击后不能只看“当前 tab URL 是否变化”，必须做 tab 对账。
 - 每次导航成功判定前，先执行域名边界判定。
 - 外部域跳转只记录、不扩散。
+- title 中出现 `401`、`403`、`unauthorized`、`无权限` 不能单独作为放弃探索的依据。
 
 ## 标准命令模式
 
@@ -53,6 +54,8 @@ powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session 
 powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session admin_001 state
 ```
 
+若 title 出现 `401`、`403`、`unauthorized`、`无权限`，必须继续读取 `state`；必要时补充 `get html` 与 `eval`。
+
 ### Step 4: 域名边界判定
 
 根据 `target_host + allowed_hosts` 判定：
@@ -85,6 +88,7 @@ powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session 
 - 同页局部跳转，但主要元素集合已变化
 
 不要仅因为“原 tab URL 未变”就判定跳转失败。
+不要仅因为 title 带有 `401`、`403`、`unauthorized`、`无权限` 就判定页面不可探索。
 
 ## 模块化测绘顺序
 

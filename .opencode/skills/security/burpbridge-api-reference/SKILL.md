@@ -22,29 +22,28 @@ description: "BurpBridge REST API完整参考文档，Security Agent专用。API
 
 ## 重要：MCP工具调用格式
 
-**所有 BurpBridge MCP 工具调用必须使用 `input` 参数包装**
+**所有 BurpBridge MCP 工具调用都直接传参，不再使用 `input` 参数包装**
 
 ### 正确调用方式
 
 ```javascript
 // 无参数工具
-mcp__burpbridge__check_burp_health(input: {})
-mcp__burpbridge__list_configured_roles(input: {})
-mcp__burpbridge__get_auto_sync_status(input: {})
+mcp__burpbridge__check_burp_health({})
+mcp__burpbridge__list_configured_roles({})
+mcp__burpbridge__get_auto_sync_status({})
 
 // 带参数工具
-mcp__burpbridge__list_paginated_http_history(input: {"host": "example.com", "page": 1})
-mcp__burpbridge__configure_auto_sync(input: {"enabled": true, "host": "www.example.com"})
-mcp__burpbridge__replay_http_request_as_role(input: {"history_entry_id": "xxx", "target_role": "admin"})
-mcp__burpbridge__sync_proxy_history_with_filters(input: {"host": "www.example.com", "require_response": true})
+mcp__burpbridge__list_paginated_http_history({"host": "example.com", "page": 1})
+mcp__burpbridge__configure_auto_sync({"enabled": true, "host": "www.example.com"})
+mcp__burpbridge__replay_http_request_as_role({"history_entry_id": "xxx", "target_role": "admin"})
+mcp__burpbridge__sync_proxy_history_with_filters({"host": "www.example.com", "require_response": true})
 ```
 
 ### 错误调用方式
 
 ```javascript
-mcp__burpbridge__check_burp_health()  // ❌ 缺少 input 参数
-mcp__burpbridge__list_paginated_http_history({"host": "example.com"})  // ❌ 缺少 input 包装
-mcp__burpbridge__get_auto_sync_status(input)  // ❌ input 必须是对象格式
+mcp__burpbridge__list_paginated_http_history(input: {"host": "example.com"})  // ❌ 旧格式，禁止继续使用
+mcp__burpbridge__replay_http_request_as_role(input: {"history_entry_id": "xxx", "target_role": "admin"})  // ❌ 旧格式，禁止继续使用
 ```
 
 ---
@@ -64,6 +63,9 @@ mcp__burpbridge__get_auto_sync_status(input)  // ❌ input 必须是对象格式
 | `/auth/roles/:role` | DELETE | 删除角色配置 | 管理 |
 | `/scan/single` | POST | 单次重放 | 测试 |
 | `/scan/batch` | POST | 批量重放 | 测试 |
+| `/intercept/once/start` | POST | 开启单次拦截 | 不可逆动作 |
+| `/intercept/once/status` | GET | 查询单次拦截状态 | 不可逆动作 |
+| `/intercept/once/stop` | POST | 主动关闭单次拦截 | 不可逆动作 |
 
 ---
 
@@ -339,7 +341,7 @@ Content-Type: application/json
 
 {
   "history_entry_ids": ["id1", "id2", "id3"],
-  "target_role": "guest",
+  "target_roles": ["guest", "user"],
   "stop_on_error": false
 }
 ```
@@ -354,6 +356,110 @@ Content-Type: application/json
   "results": [...]
 }
 ```
+
+---
+
+### 12. 单次拦截启动
+
+用于删除、审批通过、撤销、提交终止等不可逆动作：
+
+```
+POST /intercept/once/start
+Content-Type: application/json
+
+{
+  "path": "/api/workflow/terminate"
+}
+```
+
+**响应**：
+
+```json
+{
+  "enabled": true,
+  "task_id": "task-001",
+  "path": "/api/workflow/terminate",
+  "created_at_ms": 1710000000000
+}
+```
+
+---
+
+### 13. 单次拦截状态
+
+```
+GET /intercept/once/status
+```
+
+**响应**：
+
+```json
+{
+  "enabled": false,
+  "task_id": "task-001",
+  "path": "/api/workflow/terminate",
+  "matched": true,
+  "matched_history_id": "65f1a2b3c4d5e6f7a8b9c0d1",
+  "matched_method": "POST",
+  "matched_path": "/api/workflow/terminate",
+  "stop_reason": "matched_and_dropped"
+}
+```
+
+说明：
+- `matched_history_id` 是后续重放的首选来源。
+- 若 `matched=false`，不能直接判定安全，应先主动关闭拦截并记录为未命中。
+
+---
+
+### 14. 单次拦截停止
+
+```
+POST /intercept/once/stop
+Content-Type: application/json
+
+{}
+```
+
+**响应**：
+
+```json
+{
+  "enabled": false,
+  "task_id": "task-001",
+  "path": "/api/workflow/terminate",
+  "matched": false,
+  "stop_reason": "manual_stop"
+}
+```
+
+---
+
+## 不可逆操作推荐调用顺序
+
+```javascript
+await mcp__burpbridge__start_one_shot_intercept({
+  path: "/api/workflow/terminate"
+});
+
+// 等待 Navigator/Form 用有权限账号触发真实动作
+
+const status = await mcp__burpbridge__get_one_shot_intercept_status({});
+
+if (status.matched && status.matched_history_id) {
+  await mcp__burpbridge__replay_http_request_as_role({
+    history_entry_id: status.matched_history_id,
+    target_role: "guest"
+  });
+} else {
+  await mcp__burpbridge__stop_one_shot_intercept({});
+}
+```
+
+规则：
+- Security 不操作浏览器，只负责开启/查询/关闭拦截和后续重放。
+- 真实动作仍由 Navigator 或 Form 使用有权限账号触发。
+- 未命中拦截时返回可恢复异常，不得直接判定为安全。
 
 ---
 

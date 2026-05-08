@@ -75,7 +75,7 @@ const xssPayloads = [
 // 3. Security Agent查询请求详情
 // 4. 检查响应是否包含payload
 
-const history = await mcp__burpbridge__get_http_request_detail(input: {
+const history = await mcp__burpbridge__get_http_request_detail({
   history_id: "entry_xss_test"
 });
 
@@ -168,7 +168,7 @@ function detectTimeDelay(originalTime, responseTime, threshold = 5) {
 
 ```javascript
 // 使用BurpBridge重放，修改请求体
-await mcp__burpbridge__replay_http_request_as_role(input: {
+await mcp__burpbridge__replay_http_request_as_role({
   history_entry_id: "entry_api_search",
   target_role: "user",
   modifications: {

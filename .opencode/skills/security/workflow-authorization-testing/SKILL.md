@@ -13,24 +13,25 @@ description: "流程审批越权测试方法论。请求重放测试、API发现
 
 流程审批场景具有特殊性：审批操作是不可逆的，用正常账号审批后流程状态改变，无法在原流程上测试其他账户的越权。
 
-**解决方案**：请求重放测试 - 不实际执行审批操作，而是拦截请求并用其他角色的认证信息重放，分析响应判断是否存在越权漏洞。
+**解决方案**：拦截优先 + 请求重放测试。先开启单次拦截，再让有权限账号触发真实动作，由 BurpBridge 自动拦截目标请求并 drop，随后用其他角色的认证信息重放，分析响应判断是否存在越权漏洞。
 
 ```
 正常审批流程：
 ┌─────────────────────────────────────────────────────────────────┐
-│ 1. 账号A登录，执行审批操作                                        │
-│ 2. 请求通过Burp代理，被BurpBridge捕获                              │
-│ 3. 请求记录到MongoDB（包含完整请求头和请求体）                      │
+│ 1. Security 开启单次拦截，指定审批接口路径                           │
+│ 2. 账号A登录，执行审批操作                                          │
+│ 3. 请求通过Burp代理，被BurpBridge自动拦截并 drop                     │
+│ 4. 被拦截的请求记录到MongoDB（包含完整请求头和请求体）                │
 └─────────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │ 越权测试（不影响原流程）：                                          │
-│ 4. Security Agent获取审批请求详情                                  │
-│ 5. 使用其他角色的Cookie重放该请求                                   │
-│ 6. Analyzer Agent分析响应：                                        │
+│ 5. Security Agent查询拦截状态并获取 matched_history_id             │
+│ 6. 使用其他角色的Cookie重放该请求                                   │
+│ 7. Analyzer Agent分析响应：                                        │
 │    - 如果返回"无权限"：安全                                        │
 │    - 如果返回"审批成功"：越权漏洞！                                  │
-│ 7. 原流程状态不变，可继续正常审批                                    │
+│ 8. 原流程状态尽量不变，可继续正常审批                                │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -113,63 +114,48 @@ description: "流程审批越权测试方法论。请求重放测试、API发现
 
 ### 阶段2：越权测试
 
-**步骤1：查询审批请求**
+**步骤1：开启单次拦截**
 
 ```javascript
-const approvalRequests = await mcp__burpbridge__list_paginated_http_history(input: {
-  "host": "target.example.com",
-  "method": "POST",
-  "path": "/api/workflow/*",
-  "page": 1,
-  "page_size": 50
+await mcp__burpbridge__start_one_shot_intercept({
+  "path": "/api/workflow/terminate"
 });
 ```
 
 ```javascript
-// 若 workflow 节点被标记为高危，可额外触发独立 reverse probe
-const page1 = await mcp__burpbridge__list_paginated_http_history(input: {
-  "host": "target.example.com",
-  "method": "POST",
-  "path": "/api/workflow/*",
-  "page": 1,
-  "page_size": 50
-});
+// 然后由 Navigator/Form 用有权限账号触发真实审批动作
+```
 
-const lastPage = Math.ceil(page1.total / page1.page_size);
+**步骤2：查询拦截状态**
 
-for (let page = lastPage; page >= Math.max(1, lastPage - 2); page--) {
-  const recentRequests = await mcp__burpbridge__list_paginated_http_history(input: {
-    "host": "target.example.com",
-    "method": "POST",
-    "path": "/api/workflow/*",
-    "page": page,
-    "page_size": 50
-  });
+```javascript
+const interceptStatus = await mcp__burpbridge__get_one_shot_intercept_status({});
 
-  const newestFirst = [...recentRequests.items].reverse();
-  // 只用于补抓近期审批请求，不更新主扫描游标
+if (!interceptStatus.matched || !interceptStatus.matched_history_id) {
+  await mcp__burpbridge__stop_one_shot_intercept({});
+  throw new Error("INTERCEPT_NOT_MATCHED");
 }
 ```
 
-**步骤2：获取请求详情**
+**步骤3：获取请求详情**
 
 ```javascript
-const requestDetail = await mcp__burpbridge__get_http_request_detail(input: {
-  "history_id": "65f1a2b3c4d5e6f7a8b9c0d1"
+const requestDetail = await mcp__burpbridge__get_http_request_detail({
+  "history_id": interceptStatus.matched_history_id
 });
 ```
 
-**步骤3：配置测试角色**
+**步骤4：配置测试角色**
 
 ```javascript
-await mcp__burpbridge__configure_authentication_context(input: {
+await mcp__burpbridge__configure_authentication_context({
   "role": "生态经理",
   "headers": { "Authorization": "Bearer token_ecosystem_manager" },
   "cookies": { "session": "session_abc123" }
 });
 ```
 
-**步骤4：批量越权测试**
+**步骤5：批量越权测试**
 
 ```javascript
 const workflowConfig = readJson('result/workflow_config.json');
@@ -179,13 +165,13 @@ for (const workflow of workflowConfig.workflows) {
     if (!node.discovered || !node.api_endpoint) continue;
     
     const requests = await findRequestsByEndpoint(node.api_endpoint);
-    const roles = await mcp__burpbridge__list_configured_roles(input: {});
+    const roles = await mcp__burpbridge__list_configured_roles({});
     
     for (const request of requests) {
       for (const role of roles.roles) {
         const hasPermission = node.required_roles.includes(role);
         
-        const result = await mcp__burpbridge__replay_http_request_as_role(input: {
+        const result = await mcp__burpbridge__replay_http_request_as_role({
           "history_entry_id": request.id,
           "target_role": role
         });
@@ -289,7 +275,7 @@ function analyzeResponse(result, expectedPermission) {
 ## 参数变异测试
 
 ```javascript
-await mcp__burpbridge__replay_http_request_as_role(input: {
+await mcp__burpbridge__replay_http_request_as_role({
   "history_entry_id": "审批请求ID",
   "target_role": "生态经理",
   "modifications": {
@@ -309,8 +295,9 @@ await mcp__burpbridge__replay_http_request_as_role(input: {
 
 ## 注意事项
 
-1. **不影响原流程**：越权测试只是请求重放，不会改变流程状态
-2. **测试时机**：在正常审批操作后立即测试，确保请求有效
+1. **优先拦截**：删除、审批通过、撤销、提交终止等不可逆动作必须先开启单次拦截
+2. **不影响原流程**：越权测试优先依赖被拦截并 drop 的请求做重放，尽量不改变流程状态
+3. **测试时机**：在真实审批动作触发后立即查询拦截状态，确保请求有效
 3. **角色覆盖**：测试所有已配置的角色，包括有权限和无权限的
 4. **结果验证**：对可疑结果二次确认，避免误报
 5. **日志记录**：记录所有测试请求和响应，便于追溯

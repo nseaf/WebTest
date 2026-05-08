@@ -114,7 +114,7 @@ for (const api of sensitiveApis) {
 ```javascript
 // 主扫描：从旧到新顺序拉取分页
 for (let page = 1; page <= 3; page++) {
-  const history = await mcp__burpbridge__list_paginated_http_history(input: {
+  const history = await mcp__burpbridge__list_paginated_http_history({
     host: "www.example.com",
     path: "/api/users/*",
     method: "GET",
@@ -141,7 +141,7 @@ for (let page = 1; page <= 3; page++) {
 
 ```javascript
 // 高危反向追查：独立于主扫描，不修改 main_scan 游标
-const firstPage = await mcp__burpbridge__list_paginated_http_history(input: {
+const firstPage = await mcp__burpbridge__list_paginated_http_history({
   host: "www.example.com",
   path: "/api/users/*",
   method: "GET",
@@ -152,7 +152,7 @@ const firstPage = await mcp__burpbridge__list_paginated_http_history(input: {
 const lastPage = Math.ceil(firstPage.total / firstPage.page_size);
 
 for (let page = lastPage; page >= Math.max(1, lastPage - 2); page--) {
-  const recent = await mcp__burpbridge__list_paginated_http_history(input: {
+  const recent = await mcp__burpbridge__list_paginated_http_history({
     host: "www.example.com",
     path: "/api/users/*",
     method: "GET",
@@ -168,7 +168,7 @@ for (let page = lastPage; page >= Math.max(1, lastPage - 2); page--) {
 ### 获取请求详情
 
 ```javascript
-const detail = await mcp__burpbridge__get_http_request_detail(input: {
+const detail = await mcp__burpbridge__get_http_request_detail({
   history_id: "65f1a2b3c4d5e6f7a8b9c0d1"
 });
 
@@ -185,7 +185,7 @@ const detail = await mcp__burpbridge__get_http_request_detail(input: {
 ### 重放请求
 
 ```javascript
-const replay = await mcp__burpbridge__replay_http_request_as_role(input: {
+const replay = await mcp__burpbridge__replay_http_request_as_role({
   history_entry_id: "65f1a2b3c4d5e6f7a8b9c0d1",
   target_role: "guest"
 });
@@ -211,7 +211,7 @@ const result = await mongodbFind({
 
 ```javascript
 // 测试ID参数变异
-await mcp__burpbridge__replay_http_request_as_role(input: {
+await mcp__burpbridge__replay_http_request_as_role({
   history_entry_id: "entry_xxx",
   target_role: "guest",
   modifications: {
@@ -235,7 +235,7 @@ await mcp__burpbridge__replay_http_request_as_role(input: {
 const testIds = [1, 2, 100, 999, "admin", "superadmin"];
 
 for (const testId of testIds) {
-  await mcp__burpbridge__replay_http_request_as_role(input: {
+  await mcp__burpbridge__replay_http_request_as_role({
     history_entry_id: "entry_xxx",
     target_role: "guest",
     modifications: {
@@ -258,6 +258,29 @@ for (const testId of testIds) {
 | 无权限 | 200 + 数据 | 401/403 | **安全** |
 | 无权限 | 200 + 数据 | 200 + 数据 | **越权漏洞** |
 | 无权限 | 200 + 数据 | 200 + 部分数据 | **部分越权** |
+
+### 不可逆操作分支
+
+对删除、审批通过、撤销、提交终止等不可逆动作，优先使用单次拦截：
+
+```javascript
+await mcp__burpbridge__start_one_shot_intercept({
+  path: "/api/workflow/terminate"
+});
+
+// 等待有权限账号触发真实动作
+const interceptStatus = await mcp__burpbridge__get_one_shot_intercept_status({});
+
+if (interceptStatus.matched && interceptStatus.matched_history_id) {
+  await mcp__burpbridge__replay_http_request_as_role({
+    history_entry_id: interceptStatus.matched_history_id,
+    target_role: "guest"
+  });
+} else {
+  await mcp__burpbridge__stop_one_shot_intercept({});
+  // 返回 INTERCEPT_NOT_MATCHED，可恢复，不直接判定安全
+}
+```
 
 ### 响应体相似度
 
@@ -286,7 +309,7 @@ function calculateSimilarity(originalBody, replayBody) {
 
 ```javascript
 // 批量重放：多API × 多角色
-await mcp__burpbridge__replay_requests(input: {
+await mcp__burpbridge__replay_requests({
   history_entry_ids: ["id1", "id2", "id3"],
   target_roles: ["admin", "user", "guest"],
   stop_on_error: false

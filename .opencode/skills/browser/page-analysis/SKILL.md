@@ -17,6 +17,7 @@ description: "页面分析方法论，Navigator Agent 使用。基于 browser-us
   - `browser-use screenshot`
 - 页面侧只能提供 API 线索；可测试的 API 事实仍以 BurpBridge 历史为准。
 - 测绘阶段必须输出模块、子模块、入口和角色可达性，而不只是页面列表。
+- title 中出现 `401`、`403`、`unauthorized`、`无权限` 时，不得直接终止分析，必须继续读取 DOM 与交互证据。
 
 ## 分析流程
 
@@ -46,6 +47,7 @@ browser-use --session admin_001 eval "Array.from(document.querySelectorAll('nav 
 - 链接、表单、按钮、潜在敏感功能入口
 - 当前角色是否可见、可点、可进入
 - 页面侧 API 线索
+- 若页面存在无权限提示，同时记录仍可访问的按钮、tab、列表、详情入口、查询区或只读数据区
 
 5. 将页面发现写入 `pages` collection，并补充 `site_map_report`
 
@@ -81,6 +83,10 @@ browser-use --session admin_001 eval "Array.from(document.querySelectorAll('nav 
 - `readonly`
 - `needs_form_or_search`
 
+判定补充：
+- 有无权限提示但仍能交互或查看部分内容：优先记为 `visible_but_blocked` 或 `readonly`
+- 只有权限提示且无可用交互元素：再记为 `ACCESS_SCOPE_BLOCKED`
+
 ## 页面分析结果建议格式
 
 ```json
@@ -106,7 +112,7 @@ browser-use --session admin_001 eval "Array.from(document.querySelectorAll('nav 
   "role_access": {
     "role": "user",
     "status": "visible_but_blocked",
-    "evidence": "页面提示无权限"
+    "evidence": "页面提示无权限，但仍可见查询按钮与列表区"
   },
   "api_hints": [
     {

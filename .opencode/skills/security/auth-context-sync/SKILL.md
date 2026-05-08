@@ -32,7 +32,7 @@ powershell -ExecutionPolicy Bypass -File scripts/browser-use-utf8.ps1 --session 
 4. Navigator 调用 BurpBridge：
 
 ```javascript
-mcp__burpbridge__configure_authentication_context(input: {
+mcp__burpbridge__configure_authentication_context({
   role: "admin",
   headers: {},
   cookies: {
@@ -44,14 +44,14 @@ mcp__burpbridge__configure_authentication_context(input: {
 
 ## 规则
 
-- 所有 BurpBridge MCP 调用必须使用 `input` 包装。
+- 所有 BurpBridge MCP 调用都直接传参，不再使用 `input` 包装。
 - Cookie 值必须来自 `browser-use --json cookies get` 的真实输出。
 - 若页面登录成功但 Cookie 未变化，也应记录该状态，不要伪造字段。
 
 ## 角色管理
 
 ```javascript
-mcp__burpbridge__list_configured_roles(input: {})
+mcp__burpbridge__list_configured_roles({})
 ```
 
 ## 加载要求
