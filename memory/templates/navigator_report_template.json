@@ -85,12 +85,17 @@
     "LOGIN_REQUIRED": {
       "priority": "high",
       "requires_user_action": false,
-      "handler": "Coordinator调用Form Agent"
+      "handler": "Navigator自恢复或Coordinator调用Navigator刷新认证"
     },
     "SESSION_EXPIRED": {
       "priority": "high",
       "requires_user_action": false,
       "handler": "Coordinator触发重新登录"
+    },
+    "AUTH_CONTEXT_STALE": {
+      "priority": "high",
+      "requires_user_action": false,
+      "handler": "Coordinator触发Navigator刷新认证并通知Security续跑"
     },
     "TOOL_VIOLATION": {
       "priority": "high",

@@ -1,46 +1,37 @@
 {
   "$schema": "sessions_schema",
-  "description": "账号会话状态管理 - 动态认证数据",
-  "note": "此文件存储动态认证信息（Cookie/Token），由 Agent 在登录后自动更新，并同步到 BurpBridge",
+  "description": "账号会话状态管理 - Navigator 统一维护的动态认证数据",
+  "note": "此文件存储动态认证信息（Cookie/Token）、认证状态和恢复上下文，由 Navigator 在登录、判活、复登后自动更新，并同步到 BurpBridge",
   "sessions": [
     {
+      "session_name": "admin_001",
       "account_id": "admin_001",
       "role": "admin",
-      "status": "logged_out",
+      "status": "pending",
       "window_id": null,
+      "attach_mode": "reuse",
+      "attach_completed": false,
+      "visible_browser_verified": false,
+      "last_verified_url": null,
+      "last_verified_title": null,
+      "last_auth_check_at": null,
+      "last_activity_at": null,
       "auth_context": {
         "cookies": {},
         "headers": {}
       },
-      "last_activity": null,
-      "expires_at": null,
-      "login_attempts": 0
-    },
-    {
-      "account_id": "user_001",
-      "role": "user",
-      "status": "logged_out",
-      "window_id": null,
-      "auth_context": {
-        "cookies": {},
-        "headers": {}
+      "auth_state": {
+        "needs_reauth": false,
+        "relogin_attempts": 0,
+        "expires_at": null,
+        "last_refresh_at": null
       },
-      "last_activity": null,
-      "expires_at": null,
-      "login_attempts": 0
-    },
-    {
-      "account_id": "guest_001",
-      "role": "guest",
-      "status": "active",
-      "window_id": null,
-      "auth_context": {
-        "cookies": {},
-        "headers": {}
-      },
-      "last_activity": null,
-      "expires_at": null,
-      "login_attempts": 0
+      "resume_context": {
+        "task_type": null,
+        "module": null,
+        "resume_target_url": null,
+        "pending_urls": []
+      }
     }
   ],
   "_sync_info": {
@@ -55,15 +46,28 @@
   },
   "history_progress": {},
   "session_schema": {
+    "session_name": "浏览器会话主键，必须唯一",
     "account_id": "账号ID，对应 config/accounts.json 中的账号",
     "role": "用户角色: admin|user|guest",
-    "status": "logged_out|active|expired|failed",
+    "status": "pending|active|stale|expired|failed|closed",
     "window_id": "关联的浏览器窗口ID",
+    "attach_mode": "bootstrap|reuse|repair",
+    "attach_completed": "是否已完成 attach",
+    "visible_browser_verified": "是否已验证为可见浏览器",
+    "last_verified_url": "最近一次页面核验URL",
+    "last_verified_title": "最近一次页面核验标题",
+    "last_auth_check_at": "最后一次登录态检查时间 (ISO 8601)",
+    "last_activity_at": "最后一次活动时间 (ISO 8601)",
     "auth_context.cookies": "从浏览器获取的 Cookie 字典",
     "auth_context.headers": "认证相关的 HTTP 头部",
-    "last_activity": "最后活动时间 (ISO 8601)",
-    "expires_at": "会话过期时间 (ISO 8601)",
-    "login_attempts": "登录尝试次数",
+    "auth_state.needs_reauth": "当前是否需要重新认证",
+    "auth_state.relogin_attempts": "当前会话重登尝试次数",
+    "auth_state.expires_at": "会话过期时间 (ISO 8601)",
+    "auth_state.last_refresh_at": "最后一次成功刷新认证时间 (ISO 8601)",
+    "resume_context.task_type": "中断前任务类型",
+    "resume_context.module": "中断前模块",
+    "resume_context.resume_target_url": "恢复后优先回到的 URL",
+    "resume_context.pending_urls": "中断前待处理 URL 列表",
     "runtime_control.auto_sync_expected": "Security 是否要求当前会话自动同步必须开启",
     "runtime_control.auto_sync_verified_at": "最后一次自动同步验证时间 (ISO 8601)",
     "runtime_control.auto_sync_last_repair_at": "最后一次自动同步 repair 时间 (ISO 8601)",
@@ -71,9 +75,11 @@
     "history_progress": "Security 历史主扫描与高危反向追查的游标状态"
   },
   "status_definitions": {
-    "logged_out": "未登录状态",
+    "pending": "待登录或待attach",
     "active": "会话有效，可正常使用",
+    "stale": "会话临期或需要快速确认",
     "expired": "会话已过期，需要重新登录",
-    "failed": "登录失败"
+    "failed": "登录失败",
+    "closed": "会话已关闭，仅保留历史记录"
   }
 }

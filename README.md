@@ -31,9 +31,9 @@
 | Agent | 模式 | 角色 |
 |-------|------|------|
 | **Coordinator** | primary | 主控制器，工作流调度、状态管理、异常处理、全貌测绘规划 |
-| Navigator | subagent | 页面导航、全貌测绘、模块深挖、角色可达性验证、页面分析、API发现与 Cookie 同步 |
-| Form | subagent | 表单识别、登录执行、验证码处理 |
-| Security | subagent | IDOR测试、注入测试、BurpBridge集成 |
+| Navigator | subagent | 页面导航、登录、会话判活、快速复登、全貌测绘、API发现与 Cookie 同步 |
+| Form | subagent | 复杂业务表单处理与多步骤业务提交流 |
+| Security | subagent | IDOR测试、注入测试、BurpBridge集成、认证失效检测 |
 | Analyzer | subagent | 重放结果分析、漏洞判定、严重性评级 |
 | AccountParser | subagent | 账号文档解析、权限矩阵提取、流程配置生成 |
 
@@ -44,7 +44,8 @@ Coordinator 必须通过 `@{agent_name}` 调用 subagent，禁止直接使用底
 | 操作类型 | 委派目标 | 要求 |
 |---------|---------|---------|
 | 浏览器操作 | @navigator | 使用browser-use cli + skill, chrome命令 |
-| 表单处理 | @form | 使用browser-use cli + skill |
+| 登录与会话恢复 | @navigator | 统一复用 `session_name` |
+| 复杂业务表单 | @form | 使用browser-use cli + skill |
 | 安全测试 | @security | mcp__burpbridge__* |
 | 账号解析 | @account_parser | 禁止直接读取excel |
 | 结果分析 | @analyzer | — |
@@ -77,7 +78,8 @@ Skills 是可复用的方法论模块，位于 `.opencode/skills/`：
 - **多Chrome实例管理** - 每个账号独立Chrome实例和CDP端口，首次 attach 后统一复用 `session_name`
 - **统一Chrome启动参数** - 通过 `scripts/start-managed-chrome.ps1` 固定追加 `--no-first-run` 与 `--no-default-browser-check`
 - **Survey-First 流程** - 新会话先执行 `SITE_SURVEY`，输出模块、角色可达性与覆盖缺口，再进入定向探索或安全测试
-- **登录态保持** - Cookie管理、验证码检测、会话过期处理
+- **登录职责收敛** - Navigator 统一负责登录、会话判活、快速复登与 Cookie 同步
+- **认证恢复闭环** - Security 发现 `AUTH_CONTEXT_STALE` 后由 Navigator 刷新认证并续跑
 - **智能标签页处理** - 点击后自动执行 tab 对账与切换验证
 - **API发现** - 网络请求分析、API模式识别、敏感数据检测
 - **并行架构** - Security Agent与探索Agent并行运行
@@ -156,6 +158,8 @@ browser-use doctor
 |----------|------|
 | `CAPTCHA_DETECTED` | 验证码检测 |
 | `SESSION_EXPIRED` | 会话过期 |
+| `SESSION_STALE` | 会话临期或需快速确认 |
+| `AUTH_CONTEXT_STALE` | Burp 重放使用的认证上下文失效 |
 | `LOGIN_FAILED` | 登录失败 |
 | `EXPLORATION_SUGGESTION` | 探索建议 |
 | `VULNERABILITY_FOUND` | 漏洞发现 |

@@ -13,9 +13,9 @@
 | Agent | mode | 角色 |
 |-------|------|------|
 | **Coordinator** | primary | 主控制器，工作流调度、状态管理 |
-| Navigator | subagent | 页面导航+分析（已合并Scout功能）|
-| Form | subagent | 表单处理、登录执行 |
-| Security | subagent | 安全测试、IDOR/注入测试 |
+| Navigator | subagent | 页面导航+分析+登录/会话恢复（已合并Scout功能）|
+| Form | subagent | 复杂业务表单处理 |
+| Security | subagent | 安全测试、IDOR/注入测试、认证失效检测 |
 | Analyzer | subagent | 结果分析、漏洞判定、严重性评级 |
 | AccountParser | subagent | 账号文档解析、权限矩阵提取 |
 
@@ -26,7 +26,8 @@ Coordinator 必须通过将对应工作交给 subagent 完成。Coordinator本�
 | 操作类型 | subagent | 要求 |
 |---------|---------|---------|
 | 浏览器操作 | @navigator | 使用browser-use cli + skill, chrome命令 |
-| 表单处理 | @form | 使用browser-use cli + skill, chrome命令 |
+| 登录与会话恢复 | @navigator | 统一复用 `session_name` |
+| 复杂业务表单 | @form | 使用browser-use cli + skill, chrome命令 |
 | 安全测试 | @security | 使用 mcp__burpbridge__* |
 | 账号解析 | @account_parser | 禁止直接读取Excel |
 | 结果分析 | @analyzer | — |

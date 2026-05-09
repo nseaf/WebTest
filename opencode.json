@@ -15,7 +15,7 @@
   "default_agent": "Coordinator",
   "agent": {
     "Coordinator": {
-      "description": "Coordinator: Web渗透测试主控制器，通过@方式调用子Agent，执行 survey-first 测试流程与全貌测绘规划。",
+      "description": "Coordinator: Web渗透测试主控制器，通过@方式调用子Agent，执行 survey-first 测试流程、认证恢复闭环与全貌测绘规划。",
       "mode": "primary",
       "temperature": 0.2,
       "prompt": "{file:.opencode/agents/coordinator.md}",
@@ -50,7 +50,7 @@
       }
     },
     "navigator": {
-      "description": "Navigator Agent: 受管 Chrome 管理、全貌测绘、模块深挖、角色可达性验证、页面分析、API线索发现、Cookie同步与探索进度汇报。",
+      "description": "Navigator Agent: 受管 Chrome 管理、登录、会话判活、快速复登、全貌测绘、页面分析、API线索发现与Cookie同步。",
       "mode": "subagent",
       "temperature": 0.1,
       "prompt": "{file:.opencode/agents/navigator.md}",
@@ -75,7 +75,7 @@
       }
     },
     "form": {
-      "description": "Form Agent: 表单处理、登录执行、验证码检测。",
+      "description": "Form Agent: 复杂业务表单处理与多步骤业务提交流。",
       "mode": "subagent",
       "temperature": 0.1,
       "prompt": "{file:.opencode/agents/form.md}",
@@ -100,7 +100,7 @@
       }
     },
     "security": {
-      "description": "Security Agent: IDOR测试、注入测试、历史记录分析、BurpBridge集成。",
+      "description": "Security Agent: IDOR测试、注入测试、历史记录分析、认证失效检测与BurpBridge集成。",
       "mode": "subagent",
       "temperature": 0.1,
       "prompt": "{file:.opencode/agents/security.md}",

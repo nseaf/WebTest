@@ -1,6 +1,6 @@
 ---
 name: event-handling
-description: "事件处理规范，定义事件类型、优先级、处理流程。支持测绘缺口、外域跳转和恢复尝试事件。"
+description: "事件处理规范，定义事件类型、优先级、处理流程。支持认证失效、测绘缺口、外域跳转和恢复尝试事件。"
 ---
 
 # Event Handling Skill
@@ -12,8 +12,10 @@ description: "事件处理规范，定义事件类型、优先级、处理流程
 | 事件类型 | 来源 Agent | 优先级 | 需要用户操作 | 说明 |
 |----------|-----------|--------|--------------|------|
 | `CAPTCHA_DETECTED` | Form/Navigator | critical | 是 | 检测到验证码 |
-| `SESSION_EXPIRED` | Navigator/Security | high | 否 | 会话过期 |
-| `LOGIN_FAILED` | Form | high | 否 | 登录失败 |
+| `SESSION_EXPIRED` | Navigator | high | 否 | 浏览器会话已过期 |
+| `SESSION_STALE` | Navigator | normal | 否 | 浏览器会话需要快速确认或预刷新 |
+| `AUTH_CONTEXT_STALE` | Security | high | 否 | Burp 重放使用的认证上下文已失效 |
+| `LOGIN_FAILED` | Navigator | high | 否 | 登录失败 |
 | `COOKIE_CHANGED` | Navigator | normal | 否 | Cookie 已变化 |
 | `API_DISCOVERED` | Navigator | normal | 否 | 发现已证实 API |
 | `EXPLORATION_SUGGESTION` | Security/Analyzer | normal | 否 | 测试建议 |
@@ -23,45 +25,18 @@ description: "事件处理规范，定义事件类型、优先级、处理流程
 | `SURVEY_GAP_DETECTED` | Navigator/Coordinator | high | 否 | 发现高价值测绘缺口 |
 | `RECOVERY_ATTEMPTED` | Navigator | normal | 否 | 记录一轮恢复动作与结果 |
 
-## 事件优先级处理
-
-```javascript
-const priorityHandling = {
-  critical: { pause_other_tasks: true, notify_user: true },
-  high: { insert_queue_front: true, notify_user: false },
-  normal: { queue_order: "append", notify_user: false }
-};
-```
-
-处理顺序：
-1. `critical` 立即处理
-2. `high` 插队优先处理
-3. `normal` 正常排队
-
-## 事件格式
-
-```javascript
-{
-  session_id: "session_20260422",
-  event_id: "evt_20260422_103000_001",
-  event_type: "SURVEY_GAP_DETECTED",
-  source_agent: "Navigator Agent",
-  priority: "high",
-  status: "pending",
-  payload: {
-    module: "workflow",
-    submodule: "approval-detail",
-    reason: "role B 未验证",
-    suggested_task: "verify_role_access"
-  },
-  created_at: Date,
-  handled_at: null,
-  result: null,
-  error: null
-}
-```
-
 ## 核心处理流程
+
+### `AUTH_CONTEXT_STALE`
+
+1. 读取目标角色、history_entry_id、当前游标、失败响应摘要
+2. 标记为 high 优先级事件
+3. 通知 Coordinator 立即执行：
+   - `@security pause_on_auth_stale`
+   - `@navigator refresh_auth_session`
+   - `@navigator sync_cookies`
+   - `@security resume_from_cursor`
+4. 不允许 Security 自行登录或跳过断点直接重跑整批测试
 
 ### `EXTERNAL_DOMAIN_SKIPPED`
 
@@ -95,28 +70,6 @@ const priorityHandling = {
 ```text
 pending -> processing -> handled
                      └-> failed
-```
-
-## 建议轮询逻辑
-
-```javascript
-async function pollEvents() {
-  const events = await mongodbFind({
-    collection: "events",
-    filter: { session_id: currentSessionId, status: "pending" },
-    sort: { priority: -1, created_at: 1 }
-  });
-
-  for (const event of events) {
-    await markProcessing(event.event_id);
-    try {
-      const result = await handleEvent(event);
-      await markHandled(event.event_id, result);
-    } catch (error) {
-      await markFailed(event.event_id, error.message);
-    }
-  }
-}
 ```
 
 ## 加载要求

@@ -102,17 +102,17 @@ COOKIE_SYNCED: {role}:{status}
 ---Agent Contract---
 [Session ID] session_20260428_001
 [Target Host] example.com
-[Task Type] execute_logins
-[Current State] INIT
-[Gate Condition] login success or captcha detected
+[Task Type] process_complex_form
+[Current State] EXPLORATION_RUNNING
+[Gate Condition] form submitted or validation blocked
 [Session Name] user_001
 [Attach Mode] reuse
 [Active Tab] 0
-[Exploration Goal] 建立认证态
-[Entry URLs] /login
-[Pending URLs] none
-[Visited Summary] 浏览器实例已创建，待登录
-[Workflow Context] none
+[Exploration Goal] 完成审批表单并返回原探索任务
+[Entry URLs] /workflow/detail/123
+[Pending URLs] /workflow/list
+[Visited Summary] 已进入详情页，待填写业务字段
+[Workflow Context] approval_flow_001
 ---End Contract---
 ```
 

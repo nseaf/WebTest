@@ -2,11 +2,11 @@
 
 > AI-Agent Web渗透测试系统 | AI-Agent Web Penetration Testing System
 > 支持场景: Web探索 / 越权测试 / 注入测试 / 流程审批测试
-> 版本: 1.4 | 更新: 2026-04-28
+> 版本: 1.5 | 更新: 2026-05-09
 
 ---
 
-## ⛔ MANDATORY DELEGATION RULES (强制委派规则)
+## ⛔ MANDATORY DELEGATION RULES
 
 **违反以下规则将导致流程失败，必须立即停止并询问用户。**
 
@@ -14,10 +14,11 @@
 
 | 操作类型 | dispatch subagent | 要求 |
 |---------|-----------|---------------|
-| 浏览器操作 | @navigator | 使用browser-use cli + skill, chrome命令 |
-| Chrome管理 | @navigator | 使用 chrome 命令管理和维护浏览器实例 |
-| 表单处理 | @form | 使用browser-use |
-| 安全测试 | @security | mcp__burpbridge__* |
+| 浏览器操作 | @navigator | 使用 `browser-use` CLI + browser skills |
+| Chrome管理 | @navigator | 使用 `scripts/start-managed-chrome.ps1` |
+| 登录与会话恢复 | @navigator | 统一复用 `session_name`，不得交给 `@form` |
+| 复杂业务表单填写 | @form | 仅处理业务表单，不负责登录 |
+| 安全测试 | @security | 使用 `mcp__burpbridge__*` |
 | 账号解析 | @account_parser | 禁止直接读取Excel |
 | 结果分析 | @analyzer | 无（纯分析Agent） |
 
@@ -25,7 +26,7 @@
 
 **每个委派步骤执行前必须输出**：
 
-```
+```text
 @{agent_name}
 [TASK] {任务描述}
 [FORBIDDEN] {禁止事项}
@@ -35,7 +36,7 @@
 
 **如果你发现自己正在直接使用禁止的工具，立即停止并输出**：
 
-```
+```text
 [VIOLATION] 检测到违规操作: {违规行为}
 [CORRECT] 正确方式: @{agent_name}
 [STOP] 请用户确认是否继续
@@ -45,58 +46,85 @@
 
 ## System Architecture Overview
 
-本系统采用 **Coordinator + Subagent + Skill** 三层架构，实现自主Web探索和安全测试。
+本系统采用 **Coordinator + Subagent + Skill** 三层架构，实现自主 Web 探索和安全测试。
 
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                     Coordinator / Primary Agent                        │
-│  职责: 规划 → 调度 → 事件处理 → 状态监控 → 人机交互代理                    │
-└──────────────────────────┬──────────────────────────────────────────────┘
-                          │ dispatch via Task tool
-       ┌──────────┬────────┼────────┬────────┬────────┐
-       ▼          ▼        ▼        ▼        ▼        ▼
-   navigator    form   security  analyzer  account_parser
-   (导航+分析)  (表单)   (安全)    (分析)      (解析)
-       │                                            │
-       └────────────────────────────────────────────┘
-                          │
-              共享状态层: result/*.json + MongoDB
+```text
+Coordinator
+  ├─ navigator      浏览器管理、登录、会话恢复、测绘、Cookie同步
+  ├─ form           复杂业务表单填写
+  ├─ security       BurpBridge 测试、认证失效检测、断点续跑
+  ├─ analyzer       重放结果分析
+  └─ account_parser 账号/权限文档解析
 ```
 
-**注意**: Scout功能已合并到Navigator，系统现为6个Agent（1个主控 + 5个子Agent）。
-
-- **Agent 定义**: `.opencode/agents/` — 包含 Coordinator (主调度器) 及 5 个专业 Subagent
-- **Skill 知识库**: `.opencode/skills/` — 可复用的方法论模块
-- **数据存储**: `result/` — JSON 文件存储，MongoDB 用于 BurpBridge 数据
+共享状态层：
+- `result/*.json`
+- MongoDB（BurpBridge 数据）
 
 ---
 
-## Agents Reference (Agent 清单)
+## Agents Reference
 
 | Agent | 模式 | 角色 | 功能 | 调度者 |
 |-------|------|------|------|--------|
-| **Coordinator** | primary | Web渗透测试主控制器 | 工作流调度、状态管理、异常处理、进度评估、全貌测绘规划 | — |
-| Navigator | subagent | 页面导航与探索专家 | Chrome管理、全貌测绘、模块深挖、角色可达性验证、页面分析、API发现、Cookie同步 | Coordinator |
-| Form | subagent | 表单处理与登录专家 | 表单识别、智能填写、批量登录执行 | Coordinator |
-| Security | subagent | 安全测试执行专家 | IDOR测试、注入测试、历史记录分析、BurpBridge集成 | Coordinator |
+| **Coordinator** | primary | Web渗透测试主控制器 | 工作流调度、状态管理、异常处理、全貌测绘规划 | — |
+| Navigator | subagent | 页面导航与会话管理专家 | Chrome管理、登录、会话判活、快速复登、全貌测绘、Cookie同步 | Coordinator |
+| Form | subagent | 复杂业务表单处理专家 | 复杂表单识别、业务字段填写、多步骤业务提交流 | Coordinator |
+| Security | subagent | 安全测试执行专家 | IDOR测试、注入测试、历史记录分析、认证失效检测、BurpBridge集成 | Coordinator |
 | Analyzer | subagent | 安全测试结果分析专家 | 重放结果分析、漏洞判定、严重性评级 | Coordinator |
 | AccountParser | subagent | 账号文档解析专家 | 多格式账号解析、权限矩阵提取、流程配置生成 | Coordinator |
 
-### Agent 身份定义详情
-
-#### Coordinator
-- **角色**：Web渗透测试主控制器
-- **功能**：工作流调度、状态管理、异常处理、进度评估、全貌测绘规划
-- **目的**：协调多Agent完成Web应用的自动化安全测试
-- **核心原则**：Coordinator决定"做什么"和"谁来做"，将具体工作交给subagent
+### 关键职责边界
 
 #### Navigator
-- **角色**：页面导航与探索专家
-- **功能**：Chrome实例管理、全貌测绘、模块深挖、角色可达性验证、页面分析、API发现、Cookie同步
-- **目的**：自主探索Web应用，发现页面和API端点，返回详细报告
-- **特点**：已合并Scout功能；首轮先执行 `SITE_SURVEY` 全貌测绘，再按 `continue_survey`、`deep_explore_module`、`verify_role_access` 定向补测；统一管理浏览器状态（含Cookie）
+- 统一负责首次登录、会话判活、登录过期后的原 `session_name` 快速复登
+- 登录成功后统一执行 `sync_cookies`，刷新 BurpBridge 认证上下文
+- 登录恢复后必须回到原 `resume_target_url` / `pending_urls` / 原模块上下文
 
-### Survey-First Workflow（全貌测绘优先）
+#### Form
+- 只处理复杂业务表单
+- 不负责登录
+- 不负责验证码处理
+- 不负责会话恢复
+
+#### Security
+- 只负责 replay / 越权 / 注入测试
+- 发现认证失效时创建 `AUTH_CONTEXT_STALE`
+- 保存断点并等待 `navigator` 完成认证刷新
+- 不直接登录、不直接操作浏览器
+
+---
+
+## Workflow Summary
+
+### 默认链路
+
+1. `@account_parser` 解析账号文档（如需要）
+2. `@security init_security`
+3. `@navigator create_instance`
+4. `@navigator login_or_resume`
+5. `@navigator survey/explore`
+6. `@security test`
+
+### 复杂业务表单
+
+仅在探索或流程操作中遇到复杂业务表单时：
+
+1. `@form process_complex_form`
+2. 返回 `@navigator` 继续导航或恢复探索
+
+### 认证失效恢复
+
+当 `@security` 在 replay 中发现 302 到登录页、401/403、未认证响应或数据明显退化时：
+
+1. `@security pause_on_auth_stale`
+2. `@navigator refresh_auth_session`
+3. `@navigator sync_cookies`
+4. `@security resume_from_cursor`
+
+---
+
+## Survey-First Workflow
 
 - 新会话默认先进入 `SITE_SURVEY`
 - `Navigator` 首轮执行 `survey_site`
@@ -109,130 +137,32 @@
   - `role_access_matrix`
   - `coverage_gaps`
 
-#### Form
-- **角色**：表单处理与登录专家
-- **功能**：表单识别、智能填写、批量登录执行
-- **目的**：自动化处理Web表单，建立测试会话的认证状态
-- **特点**：批量处理多账号登录，遇验证码继续处理下一个，最后汇总返回
-
-#### Security
-- **角色**：安全测试执行专家
-- **功能**：IDOR测试、注入测试、历史记录分析、BurpBridge集成
-- **目的**：发现Web应用的安全漏洞，验证访问控制缺陷
-
-#### Analyzer
-- **角色**：安全测试结果分析专家
-- **功能**：重放结果分析、漏洞判定、严重性评级、测试建议生成
-- **目的**：通过语义级对比，精准识别数据泄露和安全漏洞
-
-#### AccountParser
-- **角色**：账号文档解析专家
-- **功能**：多格式账号解析、权限矩阵提取、流程配置生成
-- **目的**：将账号和权限文档转换为标准化的测试配置
-
 ---
 
-## Skills Reference (技能模块)
+## Tool Priority Strategy
 
-### Core Skills（所有 Agent 必加载）
-
-| Skill | 路径 | 功能 |
-|-------|------|------|
-| anti-hallucination | `.opencode/skills/core/anti-hallucination/` | 防幻觉规则：数据真实性验证 |
-| agent-contract | `.opencode/skills/core/agent-contract/` | Agent合约：输出格式、截断检测 |
-| shared-browser-state | `.opencode/skills/core/shared-browser-state/` | 共享浏览器状态机制 |
-
-### Workflow Skills
-
-| Skill | 路径 | 功能 |
-|-------|------|------|
-| state-machine | `.opencode/skills/workflow/state-machine/` | 状态机定义与门控机制 |
-| test-rounds | `.opencode/skills/workflow/test-rounds/` | 三轮测试模型 |
-| event-handling | `.opencode/skills/workflow/event-handling/` | 事件处理规范 |
-
-### Data Skills
-
-| Skill | 路径 | 功能 |
-|-------|------|------|
-| mongodb-writer | `.opencode/skills/data/mongodb-writer/` | 实时数据库写入 |
-| progress-tracking | `.opencode/skills/data/progress-tracking/` | 访问跟踪与进度控制 |
-| api-categorization | `.opencode/skills/data/api-categorization/` | API模块划分与分类 |
-| excel-merged-cell-handler | `.opencode/skills/data/excel-merged-cell-handler/` | Excel合并单元格处理 |
-| permission-matrix-parser | `.opencode/skills/data/permission-matrix-parser/` | 权限矩阵解析 |
-
-### Security Skills
-
-| Skill | 路径 | 功能 |
-|-------|------|------|
-| idor-testing | `.opencode/skills/security/idor-testing/` | 越权测试方法论 |
-| injection-testing | `.opencode/skills/security/injection-testing/` | 注入测试方法论 |
-| auth-context-sync | `.opencode/skills/security/auth-context-sync/` | 认证上下文同步 |
-| vulnerability-rating | `.opencode/skills/security/vulnerability-rating/` | 漏洞严重性评级 |
-| burpbridge-api-reference | `.opencode/skills/security/burpbridge-api-reference/` | BurpBridge REST API参考 |
-| workflow-authorization-testing | `.opencode/skills/security/workflow-authorization-testing/` | 流程审批越权测试 |
-| sensitive-api-detection | `.opencode/skills/security/sensitive-api-detection/` | 敏感API识别规则 |
-
-### Browser Skills
-
-| Skill | 路径 | 功能 |
-|-------|------|------|
-| page-navigation | `.opencode/skills/browser/page-navigation/` | 页面导航方法论 |
-| form-handling | `.opencode/skills/browser/form-handling/` | 表单处理方法论 |
-| page-analysis | `.opencode/skills/browser/page-analysis/` | 页面分析方法论 |
-| api-discovery | `.opencode/skills/browser/api-discovery/` | API发现方法论 |
-| browser-recovery | `.opencode/skills/browser/browser-recovery/` | 浏览器异常恢复与tab切换方法论 |
-
----
-
-## Quick Start (快速开始)
-
-### 启动测试会话
-
-```
-/coordinator
-目标URL: https://www.example.com
-请开始规划并执行Web探索测试。
-```
-
-### 前置条件检查
-
-
-# 1. MongoDB 运行中
-ps | Select-String mongo
-
-# 2. BurpBridge MCP 已启动
-
-# 3. browser-use CLI 已安装
-browser-use doctor
-
----
-
-## Tool Priority Strategy (工具优先级策略)
-
-### 工具使用优先级
-
-```
+```text
 Priority 1: Browser Automation
-└─ browser-use CLI + scripts/browser-use-utf8.ps1 + scripts/start-managed-chrome.ps1 (Chrome CDP, 多实例管理, attach兼容, 固定启动参数) ← Navigator使用
+└─ browser-use CLI + scripts/browser-use-utf8.ps1 + scripts/start-managed-chrome.ps1
 
 Priority 2: Security Testing
-├─ BurpBridge MCP (请求同步、重放、认证上下文)
-└─ MongoDB (历史记录、重放结果存储)
+├─ BurpBridge MCP
+└─ MongoDB
 
 Priority 3: Data Management
 ├─ JSON Files (result/*.json)
-└─ MongoDB (burpbridge collections)
+└─ MongoDB
 ```
 
 ### 工具使用约束
 
 | Agent | 推荐工具 | 要求 |
 |-------|---------|---------|
-| Navigator | browser-use CLI + wrapper | Windows 下优先使用 `scripts/browser-use-utf8.ps1`；Chrome 启动优先使用 `scripts/start-managed-chrome.ps1`；首次 attach 才允许 `--cdp-url` |
-| Form | browser-use CLI + wrapper | 以 `session_name` 为主，默认复用会话，不重复传 `--cdp-url` |
-| Security | BurpBridge MCP | — |
+| Navigator | browser-use CLI + wrapper | Windows 下优先使用 `scripts/browser-use-utf8.ps1`；首次 attach 才允许 `--cdp-url` |
+| Form | browser-use CLI + wrapper | 只复用现有 `session_name`，不处理登录 |
+| Security | BurpBridge MCP | 不操作浏览器 |
 | Analyzer | Read/Grep工具 | 禁止执行任何操作（仅分析数据） |
-| Coordinator | `@` 调用 subagent | 禁止直接使用 mcp__burpbridge__* |
+| Coordinator | `@` 调用 subagent | 禁止直接使用 `mcp__burpbridge__*` |
 
 ---
 
@@ -241,32 +171,55 @@ Priority 3: Data Management
 **重要**: BurpBridge MCP 工具已移除 `input` 包装，需直接传参：
 
 ```javascript
-// 正确调用方式
 burpbridge_check_burp_health({})
 burpbridge_list_paginated_http_history({ "host": "example.com" })
 burpbridge_replay_http_request_as_role({ "history_entry_id": "xxx", "target_role": "admin" })
-
-// 错误调用方式
-burpbridge_list_paginated_http_history(input: { "host": "example.com" })  // ❌ 旧格式，禁止继续使用
 ```
 
 ---
 
 ## 不可逆操作测试流程
 
-对删除、审批通过、撤销、提交终止等不可逆操作，默认走“拦截优先”分支，而不是先执行再回查历史：
+对删除、审批通过、撤销、提交终止等不可逆操作，默认走“拦截优先”分支：
 
-1. `@security` 先调用 `start_one_shot_intercept({ "path": "/目标接口路径" })`
-2. `@navigator` 或 `@form` 使用有权限账号触发真实页面动作
-3. `@security` 调用 `get_one_shot_intercept_status({})`
-4. 若 `matched=true` 且存在 `matched_history_id`，立即调用 `replay_http_request_as_role({ "history_entry_id": "matched_history_id", "target_role": "低权限角色" })`
-5. 若未命中拦截，调用 `stop_one_shot_intercept({})` 主动关闭拦截，并将其记录为可恢复异常，不能误判为安全
+1. `@security` 调用 `start_one_shot_intercept`
+2. `@navigator` 或 `@form` 触发真实页面动作
+3. `@security` 调用 `get_one_shot_intercept_status`
+4. 命中后立即基于 `matched_history_id` 重放
+5. 未命中则 `stop_one_shot_intercept` 并记录为可恢复异常
 
 ---
 
-## Permissions / Execution Policy (权限策略)
+## 状态与事件
 
-```
+### 核心会话字段
+
+`result/sessions.json` 统一维护以下运行时字段：
+
+- `session_name`
+- `account_id`
+- `role`
+- `last_auth_check_at`
+- `auth_state.needs_reauth`
+- `auth_state.relogin_attempts`
+- `resume_context.task_type`
+- `resume_context.resume_target_url`
+- `resume_context.pending_urls`
+
+### 关键事件类型
+
+- `SESSION_EXPIRED`
+- `SESSION_STALE`
+- `AUTH_CONTEXT_STALE`
+- `SURVEY_GAP_DETECTED`
+- `EXTERNAL_DOMAIN_SKIPPED`
+- `RECOVERY_ATTEMPTED`
+
+---
+
+## Permissions / Execution Policy
+
+```text
 权限策略:
 ├─ 只读 (默认): 源代码、配置、文档
 ├─ 可执行: browser-use, docker, curl
@@ -285,23 +238,18 @@ burpbridge_list_paginated_http_history(input: { "host": "example.com" })  // ❌
 
 ## Version
 
-- **Current**: 1.4
-- **Updated**: 2026-04-28
+- **Current**: 1.5
+- **Updated**: 2026-05-09
 
 ### 更新日志
+
+#### v1.5 (2026-05-09)
+- 登录职责收敛到 Navigator，Form 不再参与登录
+- 新增认证恢复闭环：`pause_on_auth_stale -> refresh_auth_session -> sync_cookies -> resume_from_cursor`
+- 收缩 Form 为复杂业务表单专用 agent
+- 扩展会话状态模型与事件类型，支持 `AUTH_CONTEXT_STALE`
 
 #### v1.4 (2026-04-28)
 - 新增项目级 browser-recovery skill，支持 session 冲突恢复、tab 切换和常见浏览器异常恢复
 - 统一浏览器会话模型：`session_name` 为主，`cdp_url` 仅用于首次 attach 或 repair
 - 强化 Navigator/Form 的标签页处理与分层探索策略
-
-#### v1.3 (2026-04-23)
-- Scout功能合并到Navigator，系统精简为6个Agent
-- 更新强制委派规则，添加违规中断机制
-- 更新各Agent身份定义
-
-#### v1.0 (Initial Release)
-- 7 个 Agent (Coordinator + 6 subagents)
-- Browser-use CLI 集成
-- BurpBridge MCP 集成
-- 流程审批场景支持
