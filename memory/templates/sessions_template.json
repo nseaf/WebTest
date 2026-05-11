@@ -1,7 +1,7 @@
 {
   "$schema": "sessions_schema",
-  "description": "账号会话状态管理 - Navigator 统一维护的动态认证数据",
-  "note": "此文件存储动态认证信息（Cookie/Token）、认证状态和恢复上下文，由 Navigator 在登录、判活、复登后自动更新，并同步到 BurpBridge",
+  "description": "Navigator-maintained browser session and BurpBridge auth-context mirror",
+  "note": "This file stores dynamic auth data, session health, and resume context. Security may read auth_context as the local mirror before replay retries.",
   "sessions": [
     {
       "session_name": "admin_001",
@@ -18,7 +18,8 @@
       "last_activity_at": null,
       "auth_context": {
         "cookies": {},
-        "headers": {}
+        "headers": {},
+        "last_synced_at": null
       },
       "auth_state": {
         "needs_reauth": false,
@@ -46,40 +47,41 @@
   },
   "history_progress": {},
   "session_schema": {
-    "session_name": "浏览器会话主键，必须唯一",
-    "account_id": "账号ID，对应 config/accounts.json 中的账号",
-    "role": "用户角色: admin|user|guest",
+    "session_name": "Unique browser session key",
+    "account_id": "Account ID from config/accounts.json",
+    "role": "Role name such as admin, user, guest",
     "status": "pending|active|stale|expired|failed|closed",
-    "window_id": "关联的浏览器窗口ID",
+    "window_id": "Managed browser window ID",
     "attach_mode": "bootstrap|reuse|repair",
-    "attach_completed": "是否已完成 attach",
-    "visible_browser_verified": "是否已验证为可见浏览器",
-    "last_verified_url": "最近一次页面核验URL",
-    "last_verified_title": "最近一次页面核验标题",
-    "last_auth_check_at": "最后一次登录态检查时间 (ISO 8601)",
-    "last_activity_at": "最后一次活动时间 (ISO 8601)",
-    "auth_context.cookies": "从浏览器获取的 Cookie 字典",
-    "auth_context.headers": "认证相关的 HTTP 头部",
-    "auth_state.needs_reauth": "当前是否需要重新认证",
-    "auth_state.relogin_attempts": "当前会话重登尝试次数",
-    "auth_state.expires_at": "会话过期时间 (ISO 8601)",
-    "auth_state.last_refresh_at": "最后一次成功刷新认证时间 (ISO 8601)",
-    "resume_context.task_type": "中断前任务类型",
-    "resume_context.module": "中断前模块",
-    "resume_context.resume_target_url": "恢复后优先回到的 URL",
-    "resume_context.pending_urls": "中断前待处理 URL 列表",
-    "runtime_control.auto_sync_expected": "Security 是否要求当前会话自动同步必须开启",
-    "runtime_control.auto_sync_verified_at": "最后一次自动同步验证时间 (ISO 8601)",
-    "runtime_control.auto_sync_last_repair_at": "最后一次自动同步 repair 时间 (ISO 8601)",
-    "runtime_control.auto_sync_owner": "负责自动同步的 Agent，固定为 security",
-    "history_progress": "Security 历史主扫描与高危反向追查的游标状态"
+    "attach_completed": "Whether attach has completed",
+    "visible_browser_verified": "Whether the browser instance is visible and verified",
+    "last_verified_url": "Last URL verified by Navigator",
+    "last_verified_title": "Last page title verified by Navigator",
+    "last_auth_check_at": "Last auth health check timestamp",
+    "last_activity_at": "Last activity timestamp",
+    "auth_context.cookies": "Cookie dictionary synced from the browser session",
+    "auth_context.headers": "Auth-related request headers used by BurpBridge replay",
+    "auth_context.last_synced_at": "When the local auth-context mirror was last refreshed",
+    "auth_state.needs_reauth": "Whether this session currently requires reauthentication",
+    "auth_state.relogin_attempts": "Current relogin attempt count",
+    "auth_state.expires_at": "Expected expiry time when known",
+    "auth_state.last_refresh_at": "Last successful auth refresh time",
+    "resume_context.task_type": "Interrupted task type",
+    "resume_context.module": "Interrupted module or workflow area",
+    "resume_context.resume_target_url": "Preferred URL to resume after recovery",
+    "resume_context.pending_urls": "URLs that still need processing after recovery",
+    "runtime_control.auto_sync_expected": "Whether Security currently expects auto sync to be enabled",
+    "runtime_control.auto_sync_verified_at": "When auto sync was last verified",
+    "runtime_control.auto_sync_last_repair_at": "When auto sync was last repaired",
+    "runtime_control.auto_sync_owner": "Agent currently responsible for the auto sync requirement",
+    "history_progress": "Security history scan and replay cursor state"
   },
   "status_definitions": {
-    "pending": "待登录或待attach",
-    "active": "会话有效，可正常使用",
-    "stale": "会话临期或需要快速确认",
-    "expired": "会话已过期，需要重新登录",
-    "failed": "登录失败",
-    "closed": "会话已关闭，仅保留历史记录"
+    "pending": "Waiting for login or attach",
+    "active": "Session is usable",
+    "stale": "Session should be rechecked or pre-refreshed soon",
+    "expired": "Session requires reauthentication",
+    "failed": "Login or recovery failed",
+    "closed": "Session was closed and kept only for history"
   }
 }

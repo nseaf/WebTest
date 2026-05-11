@@ -1,81 +1,86 @@
 ---
 name: event-handling
-description: "事件处理规范，定义事件类型、优先级、处理流程。支持认证失效、测绘缺口、外域跳转和恢复尝试事件。"
+description: "Coordinator 的事件处理规范，统一认证恢复、CSRF 续链事件、survey 缺口与跨 Agent 异常路由。"
 ---
 
 # Event Handling Skill
 
-> 事件处理规范：让 Coordinator 能稳定消费 Navigator/Form/Security 返回的异常、建议和恢复证据。
+本 skill 约束 Coordinator 如何消费 subagent 返回的异常与异步事件。
 
-## 事件类型定义
+## 事件类型
 
-| 事件类型 | 来源 Agent | 优先级 | 需要用户操作 | 说明 |
-|----------|-----------|--------|--------------|------|
-| `CAPTCHA_DETECTED` | Form/Navigator | critical | 是 | 检测到验证码 |
-| `SESSION_EXPIRED` | Navigator | high | 否 | 浏览器会话已过期 |
-| `SESSION_STALE` | Navigator | normal | 否 | 浏览器会话需要快速确认或预刷新 |
-| `AUTH_CONTEXT_STALE` | Security | high | 否 | Burp 重放使用的认证上下文已失效 |
-| `LOGIN_FAILED` | Navigator | high | 否 | 登录失败 |
-| `COOKIE_CHANGED` | Navigator | normal | 否 | Cookie 已变化 |
-| `API_DISCOVERED` | Navigator | normal | 否 | 发现已证实 API |
-| `EXPLORATION_SUGGESTION` | Security/Analyzer | normal | 否 | 测试建议 |
-| `BURPBRIDGE_ERROR` | Security | high | 否 | BurpBridge 异常 |
-| `EXTERNAL_DOMAIN_SKIPPED` | Navigator | normal | 否 | 命中外域，已跳过并回退 |
-| `ACCESS_SCOPE_BLOCKED` | Navigator | normal | 否 | 当前角色不可达某模块/入口 |
-| `SURVEY_GAP_DETECTED` | Navigator/Coordinator | high | 否 | 发现高价值测绘缺口 |
-| `RECOVERY_ATTEMPTED` | Navigator | normal | 否 | 记录一轮恢复动作与结果 |
+| event_type | source | priority | 需要用户 | 含义 |
+|---|---|---|---|---|
+| `CAPTCHA_DETECTED` | Form/Navigator | critical | yes | 需要人工协助 |
+| `SESSION_EXPIRED` | Navigator | high | no | 浏览器 session 已失效 |
+| `SESSION_STALE` | Navigator | normal | no | 浏览器 session 需要快速确认或预刷新 |
+| `AUTH_CONTEXT_STALE` | Security | high | no | BurpBridge auth context 已失效 |
+| `CSRF_TOKEN_STALE` | Security | normal | no | replay 需要刷新 CSRF token 后再试 |
+| `CSRF_TOKEN_REFRESHED` | Security | normal | no | Security 已刷新 token 并发起后续 replay |
+| `CSRF_REFRESH_FAILED` | Security | high | no | 有界 CSRF 续链失败 |
+| `AUTH_CONTEXT_SNAPSHOT_MISSING` | Security | high | no | Security 需要 Navigator 先重新同步 auth context |
+| `LOGIN_FAILED` | Navigator | high | no | 登录失败 |
+| `COOKIE_CHANGED` | Navigator | normal | no | Cookie 已变化并重新同步 |
+| `API_DISCOVERED` | Navigator | normal | no | 发现新的确认 API |
+| `EXPLORATION_SUGGESTION` | Security/Analyzer | normal | no | 后续探索或测试建议 |
+| `BURPBRIDGE_ERROR` | Security | high | maybe | BurpBridge 或依赖异常 |
+| `EXTERNAL_DOMAIN_SKIPPED` | Navigator | normal | no | 跳过了范围外域名 |
+| `ACCESS_SCOPE_BLOCKED` | Navigator | normal | no | 当前角色无法访问某模块/路由 |
+| `SURVEY_GAP_DETECTED` | Navigator/Coordinator | high | no | 仍存在高价值 survey 缺口 |
+| `RECOVERY_ATTEMPTED` | Navigator | normal | no | 记录了一次恢复动作 |
 
-## 核心处理流程
+## 核心处理规则
 
-### `AUTH_CONTEXT_STALE`
+### AUTH_CONTEXT_STALE
 
-1. 读取目标角色、history_entry_id、当前游标、失败响应摘要
-2. 标记为 high 优先级事件
-3. 通知 Coordinator 立即执行：
-   - `@security pause_on_auth_stale`
-   - `@navigator refresh_auth_session`
-   - `@navigator sync_cookies`
-   - `@security resume_from_cursor`
-4. 不允许 Security 自行登录或跳过断点直接重跑整批测试
+Coordinator 应立即按以下顺序执行：
+1. `@security pause_on_auth_stale`
+2. `@navigator refresh_auth_session`
+3. `@navigator sync_cookies`
+4. `@security resume_from_cursor`
 
-### `EXTERNAL_DOMAIN_SKIPPED`
+Security 不得自行登录，也不得跳过断点直接重跑整批测试。
 
-1. 读取外域 URL、来源页面、回退动作
-2. 标记为非致命事件
-3. 将该入口从当前导航队列移出
-4. 如存在同模块替代入口，生成 `EXPLORATION_SUGGESTION`
-5. 记录到 `site_survey.external_domains`
+### CSRF_TOKEN_STALE
 
-### `ACCESS_SCOPE_BLOCKED`
+这是 Security 内部恢复事件，默认不是跨 Agent 切换。
 
-1. 记录当前角色、模块、入口 URL
-2. 标记 `role_access_matrix` 中该角色为 `blocked|hidden|readonly`
-3. 如仍有其他角色未验证，创建 `SURVEY_GAP_DETECTED`
-4. 不将该模块记为“未发现”
+Coordinator 应：
+1. 让 Security 执行 `handle_csrf_retry`
+2. 等待其返回 `CSRF_TOKEN_REFRESHED`、`CSRF_REFRESH_FAILED` 或 `AUTH_CONTEXT_SNAPSHOT_MISSING`
 
-### `SURVEY_GAP_DETECTED`
+不允许为了首轮 token 提取而切到 Analyzer。
 
-1. 读取 gap 的模块、子模块、优先级、原因
-2. 更新 `progress.modules[].survey_status`
-3. 如果优先级为 `high/critical`，插队给下一轮 `continue_survey`
+### AUTH_CONTEXT_SNAPSHOT_MISSING
 
-### `RECOVERY_ATTEMPTED`
+Coordinator 应：
+1. 调度 `@navigator sync_cookies`
+2. 再把控制权交回 Security 继续 replay chain
 
-1. 记录问题类型、尝试次数、恢复动作、结果
-2. 如果两轮恢复后仍失败，升级为上报建议
-3. 如果已恢复，保持 normal 事件，不打断主流程
+这是可恢复状态，不应当直接当作登录失败处理。
+
+### CSRF_REFRESH_FAILED
+
+Coordinator 应：
+1. 把失败记录到 findings 或 exceptions；
+2. 终止该 replay chain；
+3. 在安全前提下继续其他独立测试分支。
+
+### SURVEY_GAP_DETECTED
+
+当 gap 属于高价值缺口时，应提高优先级，尽快插入 `continue_survey`。
 
 ## 状态流转
 
 ```text
 pending -> processing -> handled
-                     └-> failed
+                     -> failed
 ```
 
 ## 加载要求
 
 ```yaml
-1. 尝试: skill({ name: "event-handling" })
-2. 若失败: Read(".opencode/skills/workflow/event-handling/SKILL.md")
-3. Coordinator 必须加载本 Skill
+1. Try: skill({ name: "event-handling" })
+2. Fallback: Read(".opencode/skills/workflow/event-handling/SKILL.md")
+3. Coordinator 必须加载本 skill
 ```

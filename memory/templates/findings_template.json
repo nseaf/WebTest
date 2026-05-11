@@ -1,7 +1,6 @@
 {
   "$schema": "findings_schema",
-  "description": "漏洞发现记录模板",
-  
+  "description": "Finding record template",
   "finding_template": {
     "finding_id": "finding_XXX",
     "session_id": "",
@@ -11,11 +10,19 @@
     "endpoint": "",
     "method": "GET|POST|PUT|DELETE|PATCH",
     "tested_role": "",
+    "source_role": "",
+    "target_role": "",
+    "matched_rules": [],
+    "permission_baseline_available": false,
+    "baseline_source": "none|accounts_only|permission_matrix|workflow_config|multiple",
+    "permission_expectation": "allowed|denied|unknown",
     "result": {
       "original_status": 0,
       "replayed_status": 0,
       "sensitive_data_exposed": [],
-      "response_similarity": 0.0
+      "response_similarity": 0.0,
+      "body_similarity": 0.0,
+      "ownership_evidence": null
     },
     "history_entry_id": "",
     "replay_id": "",
@@ -25,26 +32,23 @@
     "evidence": "",
     "remediation": ""
   },
-  
   "severity_definitions": {
-    "Critical": "可导致完全系统控制或敏感数据大规模泄露",
-    "High": "可导致权限提升或敏感数据泄露",
-    "Medium": "可导致有限的数据泄露或功能滥用",
-    "Low": "信息泄露，无直接安全影响"
+    "Critical": "Full system compromise or large-scale sensitive data exposure",
+    "High": "Privilege escalation or sensitive data exposure",
+    "Medium": "Limited data exposure or feature abuse",
+    "Low": "Information exposure or low-impact security issue"
   },
-  
   "vuln_types": {
-    "IDOR": "不安全的直接对象引用",
-    "XSS": "跨站脚本攻击",
-    "SQLI": "SQL注入",
-    "CSRF": "跨站请求伪造",
-    "INFO_LEAK": "信息泄露",
-    "AUTH_BYPASS": "认证绕过"
+    "IDOR": "Insecure direct object reference",
+    "XSS": "Cross-site scripting",
+    "SQLI": "SQL injection",
+    "CSRF": "Cross-site request forgery",
+    "INFO_LEAK": "Information leak",
+    "AUTH_BYPASS": "Authentication or authorization bypass"
   },
-  
   "_usage": {
     "load_method": "Read('memory/templates/findings_template.json')",
     "mongodb_write": "webtest.findings collection",
-    "realtime_write": "每发现一个漏洞立即写入"
+    "realtime_write": "Write immediately when a finding is confirmed"
   }
 }

@@ -1,51 +1,58 @@
-# 共享状态文件规范
+# 共享状态文件说明
 
-本文档定义 Agent 间通信使用的核心状态文件格式、读写时机和注意事项。
-
----
-
-## 文件路径总览
-
-| 文件 | 路径 | 用途 | 模板位置 |
-|------|------|------|----------|
-| 事件队列 | `result/events.json` | Agent间异步通信 | `memory/templates/events_template.json` |
-| 全貌测绘 | `result/site_survey.json` | 首轮测绘与补测聚合快照 | `memory/templates/site_survey_template.json` |
-| 窗口注册 | `result/windows.json` | 多标签页管理 | `memory/templates/windows_template.json` |
-| 会话状态 | `result/sessions.json` | 浏览器登录状态、认证上下文、恢复上下文 | `memory/templates/sessions_template.json` |
-| API发现 | `result/apis.json` | 发现的API端点 | `memory/templates/apis_template.json` |
-| 页面记录 | `result/pages.json` | 访问过的页面 | `memory/discoveries/pages.json` |
-| 表单记录 | `result/forms.json` | 发现的表单 | `memory/discoveries/forms.json` |
-| 链接记录 | `result/links.json` | 发现的链接 | `memory/discoveries/links.json` |
-| 漏洞记录 | `result/vulnerabilities.json` | 发现的漏洞 | `memory/discoveries/vulnerabilities.json` |
+本文档定义 Coordinator 与各 subagent 共用的 JSON 状态文件。
 
 ---
 
-## 1. 事件队列 (events.json)
+## 文件总览
 
-### 事件类型定义
-
-| 事件类型 | 来源 Agent | 优先级 | 需要用户操作 |
-|----------|-----------|--------|--------------|
-| CAPTCHA_DETECTED | Form/Navigator | critical | ✅ 是 |
-| SESSION_EXPIRED | Navigator | high | ❌ 否 |
-| SESSION_STALE | Navigator | normal | ❌ 否 |
-| AUTH_CONTEXT_STALE | Security | high | ❌ 否 |
-| AUTO_SYNC_DRIFT | Security | high | ❌ 否 |
-| LOGIN_FAILED | Navigator | high | ❌ 否 |
-| EXPLORATION_SUGGESTION | Security/Analyzer | normal | ❌ 否 |
-| VULNERABILITY_FOUND | Security | high | ❌ 否 |
-| API_DISCOVERED | Navigator | normal | ❌ 否 |
-| FORM_SUBMISSION_ERROR | Form | normal | ❌ 否 |
-| EXTERNAL_DOMAIN_SKIPPED | Navigator | normal | ❌ 否 |
-| ACCESS_SCOPE_BLOCKED | Navigator | normal | ❌ 否 |
-| SURVEY_GAP_DETECTED | Navigator/Coordinator | high | ❌ 否 |
-| RECOVERY_ATTEMPTED | Navigator | normal | ❌ 否 |
+| 文件 | 路径 | 作用 | 模板 |
+|---|---|---|---|
+| 事件队列 | `result/events.json` | 跨 Agent 异常与建议 | `memory/templates/events_template.json` |
+| 站点测绘 | `result/site_survey.json` | 首轮 breadth-first 测绘与缺口记录 | `memory/templates/site_survey_template.json` |
+| 窗口注册表 | `result/windows.json` | 受管浏览器窗口状态 | `memory/templates/windows_template.json` |
+| 会话状态 | `result/sessions.json` | 浏览器 session 状态与 BurpBridge auth 镜像 | `memory/templates/sessions_template.json` |
+| API 记录 | `result/apis.json` | 已确认与推断出的 API | `memory/templates/apis_template.json` |
+| 页面记录 | `result/pages.json` | 已访问页面 | `memory/discoveries/pages.json` |
+| 表单记录 | `result/forms.json` | 已发现表单 | `memory/discoveries/forms.json` |
+| 链接记录 | `result/links.json` | 已发现链接 | `memory/discoveries/links.json` |
+| 漏洞记录 | `result/vulnerabilities.json` | 已确认或待确认漏洞 | `memory/discoveries/vulnerabilities.json` |
 
 ---
 
-## 2. 会话状态 (sessions.json)
+## 1. 事件队列（`events.json`）
 
-### 会话记录格式
+### 事件类型
+
+| 事件类型 | 来源 | 优先级 | 需要用户 | 含义 |
+|---|---|---|---|---|
+| `CAPTCHA_DETECTED` | Form/Navigator | critical | yes | 需要人工协助 |
+| `SESSION_EXPIRED` | Navigator | high | no | 浏览器 session 已失效 |
+| `SESSION_STALE` | Navigator | normal | no | 浏览器 session 需要快速确认 |
+| `AUTH_CONTEXT_STALE` | Security | high | no | BurpBridge auth context 已失效 |
+| `CSRF_TOKEN_STALE` | Security | normal | no | Security 识别到可续链的 CSRF token 过期 |
+| `CSRF_TOKEN_REFRESHED` | Security | normal | no | Security 已刷新 token 并重放 |
+| `CSRF_REFRESH_FAILED` | Security | high | no | 有界 CSRF 续链失败 |
+| `AUTH_CONTEXT_SNAPSHOT_MISSING` | Security | high | no | Security 需要 Navigator 重新同步 auth context |
+| `AUTO_SYNC_DRIFT` | Security | high | no | BurpBridge auto-sync 漂移 |
+| `LOGIN_FAILED` | Navigator | high | no | 登录失败 |
+| `EXPLORATION_SUGGESTION` | Security/Analyzer | normal | no | 建议的后续探索或测试方向 |
+| `VULNERABILITY_FOUND` | Security/Analyzer | high | no | 漏洞已确认 |
+| `API_DISCOVERED` | Navigator | normal | no | 发现 API |
+| `FORM_SUBMISSION_ERROR` | Form | normal | no | 业务表单提交失败 |
+| `EXTERNAL_DOMAIN_SKIPPED` | Navigator | normal | no | 跳过范围外域名 |
+| `ACCESS_SCOPE_BLOCKED` | Navigator | normal | no | 当前角色无法访问某模块/路由 |
+| `SURVEY_GAP_DETECTED` | Navigator/Coordinator | high | no | 仍有高价值 survey 缺口 |
+| `RECOVERY_ATTEMPTED` | Navigator | normal | no | 记录了一次恢复动作 |
+
+优先级规则：
+- `AUTH_CONTEXT_STALE` 高于 `CSRF_TOKEN_STALE`。
+
+---
+
+## 2. 会话状态（`sessions.json`）
+
+### 单条会话结构
 
 ```json
 {
@@ -54,19 +61,27 @@
   "role": "admin",
   "window_id": "window_0",
   "status": "active",
-  "attach_status": "attached",
   "attach_mode": "reuse",
-  "cdp_url": "http://127.0.0.1:9222",
-  "chrome_pid": 12345,
+  "attach_completed": true,
+  "visible_browser_verified": true,
   "last_verified_url": "https://example.com/dashboard",
   "last_verified_title": "Dashboard",
-  "last_auth_check_at": "2026-05-09T10:00:00Z",
-  "last_activity_at": "2026-05-09T10:30:00Z",
+  "last_auth_check_at": "2026-05-11T09:00:00Z",
+  "last_activity_at": "2026-05-11T09:15:00Z",
+  "auth_context": {
+    "headers": {
+      "X-CSRF-Token": "abc123"
+    },
+    "cookies": {
+      "session": "admin_session_abc"
+    },
+    "last_synced_at": "2026-05-11T09:00:00Z"
+  },
   "auth_state": {
     "needs_reauth": false,
     "relogin_attempts": 0,
     "expires_at": null,
-    "last_refresh_at": "2026-05-09T10:00:00Z"
+    "last_refresh_at": "2026-05-11T09:00:00Z"
   },
   "resume_context": {
     "task_type": "survey_site",
@@ -77,16 +92,24 @@
 }
 ```
 
+### 关键规则
+
+- Navigator 负责写入浏览器来源的 session snapshot。
+- `auth_context` 是 BurpBridge replay auth state 的本地镜像。
+- Security 可以读取该镜像做 replay 恢复。
+- Security 在刷新 CSRF header 时，必须先本地合并，再整份回写。
+- 不允许在 snapshot 不完整时直接覆盖 BurpBridge auth context。
+
 ### 会话状态定义
 
-| 状态 | 说明 |
-|------|------|
-| pending | 待登录或待attach |
-| active | 会话有效，可正常使用 |
-| stale | 会话需要快速确认或预刷新 |
-| expired | 会话已过期，需要重新登录 |
-| failed | 登录失败 |
-| closed | 会话已关闭，仅保留历史记录 |
+| 状态 | 含义 |
+|---|---|
+| `pending` | 等待登录或 attach |
+| `active` | 当前 session 可用 |
+| `stale` | 需要快速确认或预刷新 |
+| `expired` | 需要重新认证 |
+| `failed` | 登录或恢复失败 |
+| `closed` | 会话已关闭，仅保留历史信息 |
 
 ### 运行时控制字段
 
@@ -94,7 +117,7 @@
 {
   "runtime_control": {
     "auto_sync_expected": true,
-    "auto_sync_verified_at": "2026-05-09T10:02:00Z",
+    "auto_sync_verified_at": "2026-05-11T09:02:00Z",
     "auto_sync_last_repair_at": null,
     "auto_sync_owner": "security"
   }
@@ -105,7 +128,7 @@
 
 ## 3. 初始化建议
 
-测试会话开始前，Coordinator 应初始化核心状态文件：
+新测试会话启动前，Coordinator 应初始化核心状态文件：
 
 ```bash
 mkdir -p result

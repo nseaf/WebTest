@@ -1,6 +1,8 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "instructions": ["AGENTS.md"],
+  "instructions": [
+    "AGENTS.md"
+  ],
   "watcher": {
     "ignore": [
       "**/node_modules/**",
@@ -15,7 +17,7 @@
   "default_agent": "Coordinator",
   "agent": {
     "Coordinator": {
-      "description": "Coordinator: Web渗透测试主控制器，通过@方式调用子Agent，执行 survey-first 测试流程、认证恢复闭环与全貌测绘规划。",
+      "description": "Coordinator: workflow orchestration and cross-agent coordination.",
       "mode": "primary",
       "temperature": 0.2,
       "prompt": "{file:.opencode/agents/coordinator.md}",
@@ -50,7 +52,7 @@
       }
     },
     "navigator": {
-      "description": "Navigator Agent: 受管 Chrome 管理、登录、会话判活、快速复登、全貌测绘、页面分析、API线索发现与Cookie同步。",
+      "description": "Navigator Agent: managed Chrome, login, recovery, exploration, and cookie sync.",
       "mode": "subagent",
       "temperature": 0.1,
       "prompt": "{file:.opencode/agents/navigator.md}",
@@ -75,7 +77,7 @@
       }
     },
     "form": {
-      "description": "Form Agent: 复杂业务表单处理与多步骤业务提交流。",
+      "description": "Form Agent: complex business forms and multi-step submissions.",
       "mode": "subagent",
       "temperature": 0.1,
       "prompt": "{file:.opencode/agents/form.md}",
@@ -100,7 +102,7 @@
       }
     },
     "security": {
-      "description": "Security Agent: IDOR测试、注入测试、历史记录分析、认证失效检测与BurpBridge集成。",
+      "description": "Security Agent: replay testing, auth-stale handling, and CSRF retry recovery.",
       "mode": "subagent",
       "temperature": 0.1,
       "prompt": "{file:.opencode/agents/security.md}",
@@ -125,7 +127,7 @@
       }
     },
     "analyzer": {
-      "description": "Analyzer Agent: 重放结果分析、漏洞判定、严重性评级、测试建议生成。",
+      "description": "Analyzer Agent: stable replay analysis, vulnerability judgment, and severity rating.",
       "mode": "subagent",
       "temperature": 0.15,
       "prompt": "{file:.opencode/agents/analyzer.md}",
@@ -142,7 +144,7 @@
       }
     },
     "account_parser": {
-      "description": "Account Parser: 账号文档解析、权限矩阵提取、accounts.json生成。",
+      "description": "Account Parser: account document parsing and accounts.json generation.",
       "mode": "subagent",
       "temperature": 0.1,
       "prompt": "{file:.opencode/agents/account_parser.md}",
