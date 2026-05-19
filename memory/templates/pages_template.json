@@ -4,10 +4,13 @@
   
   "page_template": {
     "page_id": "page_XXX",
+    "project_key": "",
+    "session_id": "",
     "url": "",
     "title": "",
     "type": "home|login|list|detail|profile|settings|admin|other",
     "apis_found": [],
+    "permission_keys": [],
     "links_count": 0,
     "forms_found": [],
     "visited_at": "ISO8601",
@@ -28,7 +31,7 @@
   
   "_usage": {
     "load_method": "Read('memory/templates/pages_template.json')",
-    "mongodb_write": "webtest.pages collection",
+    "mongodb_write": "webtest_<project_key>.pages collection",
     "realtime_write": "每访问一个页面立即写入"
   }
 }

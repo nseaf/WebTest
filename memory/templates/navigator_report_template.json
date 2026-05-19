@@ -112,9 +112,12 @@
   "_usage": {
     "load_method": "Read('memory/templates/navigator_report_template.json')",
     "mongodb_write": {
-      "pages": "webtest.pages collection",
-      "apis": "webtest.apis collection",
-      "exceptions": "webtest.events collection"
+      "pages": "webtest_<project_key>.pages collection",
+      "apis": "webtest_<project_key>.apis collection",
+      "exceptions": "webtest_<project_key>.events collection"
     }
+  },
+  "_contract_notes": {
+    "suggestions": "Advisory only. Suggestions are signals for Coordinator review and must not be treated as approved next actions."
   }
 }

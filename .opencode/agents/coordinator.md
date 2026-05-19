@@ -42,10 +42,15 @@ Coordinator 只负责决定“做什么”和“由谁去做”，具体执行�
 
 核心原则：
 - 默认先 `survey-first`，先建立覆盖面，再做定向深挖和安全测试。
+- 默认改为 `permission-first` 调度：先建立权限基线与待测权限队列，再按权限点驱动角色测试。
+- 不预登录全部账号，不为保活所有角色做无差别重登或全量 `sync_cookies`。
 - `Navigator` 统一负责登录、会话判活、认证恢复和 `sync_cookies`。
 - `Form` 只负责复杂业务表单。
 - `Security` 负责 replay 测试、`AUTH_CONTEXT_STALE` 和 Security 内部的 CSRF 续链。
 - `Analyzer` 只在 replay 结果稳定后介入。
+- `result/permission_targets.json` 是默认调度中心，优先级高于“当前已登录账号列表”。
+- WebTest 自有运行数据写入项目级数据库：`webtest_<project_key>`。
+- subagent 的 `suggestions` 与 `recommended_next_actions` 只作为建议输入，Coordinator 不得直接照做。
 
 ## 2. 必加载 Skills
 
@@ -82,14 +87,18 @@ Coordinator 只负责决定“做什么”和“由谁去做”，具体执行�
 1. 如需账号解析，先调度 `@account_parser`。
 2. 检查环境前置条件。
 3. `@security init_security`
-4. `@navigator create_instance`
-5. `@navigator login_or_resume`
-6. `@navigator sync_cookies`
+4. 基于 `accounts.json` 与 `permission_matrix.json` 初始化或刷新 `result/permission_targets.json`。
+5. 选择当前最有价值的 `permission_key` 与对应首个角色轮次。
+6. 仅为当前轮次角色调度：
+   - `@navigator create_instance`
+   - `@navigator login_or_resume`
+   - `@navigator sync_cookies`
 
 ### Step 2: SITE_SURVEY
 
 1. `@navigator survey_site`
 2. 更新测绘状态。
+3. 将 `role_access_matrix`、`confirmed_apis`、`api_hints` 和页面证据回填到 `result/permission_targets.json`。
 3. 决定后续进入：
    - `continue_survey`
    - `deep_explore_module`
@@ -102,11 +111,13 @@ Coordinator 只负责决定“做什么”和“由谁去做”，具体执行�
 2. 如果遇到复杂业务表单：
    - `@form process_complex_form`
    - 然后 `@navigator resume_navigation_context`
-3. 当目标模块证据充足后，转入安全测试。
+3. 当前轮次应始终围绕所选 `permission_key`、邻近无权限点和高风险关联接口推进。
+4. 当目标权限点证据充足后，转入安全测试。
 
 ### Step 4: SECURITY_TESTING
 
-1. 由 `@security` 执行 `test_authorization`、`test`、`attack_chain_test` 或注入测试。
+1. 由 `@security` 基于 `permission_targets` backlog 执行 `test_authorization`、`test`、`attack_chain_test` 或注入测试。
+2. 若可立即跨角色 replay，则立即验证；若目标角色缺少有效 auth snapshot，则记入 `deferred_roles` / `deferred_reasons`，不要强制回到多账号反复登录。
 2. 如果 Security 返回 `AUTH_CONTEXT_STALE`：
    - `@security pause_on_auth_stale`
    - `@navigator refresh_auth_session`
@@ -123,16 +134,32 @@ Coordinator 只负责决定“做什么”和“由谁去做”，具体执行�
    - 至少传入：`replay_id`、`source_role`、`target_role`、`history_entry_id`
    - 如已知，再补充：`node_name`、`module`、`expected_permission`
 
-### Step 5: EVALUATION
+### Step 5: FINAL_STAGE
+
+1. 当常规权限点已闭环后，统一处理 `deferred` 权限点。
+2. 对 `final_stage_required=true` 或 `irreversible=true` 的权限点，使用 intercept-first 流程专项处理。
+3. 仅在最终专项阶段需要时，才安排多角色并行或补登录。
+
+### Step 6: EVALUATION
+
+Coordinator 在 EVALUATION 中必须做全局审视，不允许直接采纳任一 subagent 的建议。
+
+固定审视顺序：
+1. 高优先级 survey gap
+2. 高价值未闭环 `permission_key`
+3. deferred 角色与 `FINAL_STAGE`
+4. subagent `suggestions` / `recommended_next_actions`
 
 只要满足以下任一条件，就继续循环：
 - 仍有高价值 survey gap；
 - 仍有模块需要深挖；
 - 仍有角色访问差异未核实；
-- 仍有重要 replay 分支未测试；
+- 仍有重要 `permission_key` 未闭环；
+- 仍有 deferred 角色待补测；
+- 仍有 `final_stage_required=true` 的不可逆专项未处理；
 - 已发现漏洞还需要链式验证。
 
-### Step 6: REPORT
+### Step 7: REPORT
 
 1. 汇总覆盖情况、发现结果和剩余缺口。
 2. `@navigator close_instance`
@@ -162,6 +189,8 @@ Coordinator 只负责决定“做什么”和“由谁去做”，具体执行�
 - `CSRF_TOKEN_STALE` 通常是 Security 内部恢复分支，而不是新的跨 Agent 主流程。
 - `AUTH_CONTEXT_SNAPSHOT_MISSING` 是可恢复异常，通常表示需要 Navigator 先刷新本地 auth mirror。
 - 调用 `@analyzer` 时，优先把角色差异、节点信息和权限预期显式传入，避免它只依赖 replay 表面差异。
+- 当目标角色缺少有效 auth snapshot 时，优先标记 deferred，而不是立即强制进行跨角色补登录。
+- 若 subagent 建议与全局优先级冲突，Coordinator 必须拒绝该建议并重排，不得盲从局部最优路径。
 
 ## 6. 委派契约
 
@@ -174,9 +203,13 @@ Coordinator 只负责决定“做什么”和“由谁去做”，具体执行�
 
 ---Agent Contract---
 [Session ID] {session_id}
+[Project Key] {project_key}
+[Project Database] {database_name}
 [Target Host] {target_host}
 [Task Type] {task_type}
 [Session Name] {session_name}
+[Permission Key] {permission_key}
+[Role Focus] {role_focus}
 [Attach Mode] {bootstrap|reuse|repair}
 [Allowed Hosts] {allowed_hosts}
 [Context] {relevant context}

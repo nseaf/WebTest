@@ -1,0 +1,106 @@
+{
+  "$schema": "permission_targets_schema",
+  "description": "权限中心运行态模板 - 以权限点为中心聚合角色、账号、页面、接口、测试进度和延期原因",
+  "project_key": null,
+  "database_name": null,
+  "target_host": null,
+  "session_id": null,
+  "targets": [
+    {
+      "permission_key": "workflow.approval.submit",
+      "module_path": ["workflow", "approval"],
+      "menu_path": ["流程中心", "审批管理"],
+      "permission_name": "提交审批",
+      "baseline_source": "permission_matrix",
+      "allowed_roles": ["manager"],
+      "allowed_accounts": ["test1020"],
+      "denied_roles": ["employee", "guest"],
+      "entry_points": [
+        {
+          "entry_type": "menu",
+          "entry_url": "https://example.com/workflow/approval",
+          "entry_label": "审批管理",
+          "source": "navigator_survey"
+        }
+      ],
+      "access_steps": [
+        "从首页进入 流程中心",
+        "点击左侧菜单 审批管理",
+        "进入审批列表后打开 提交审批"
+      ],
+      "ui_locations": [
+        {
+          "menu_path": ["流程中心", "审批管理"],
+          "page_title": "审批列表",
+          "region": "主内容区",
+          "element_text": "提交审批",
+          "locator": null
+        }
+      ],
+      "related_pages": [
+        "https://example.com/workflow/approval"
+      ],
+      "related_apis": [
+        {
+          "api_id": "api_001",
+          "url": "/api/workflow/submit",
+          "method": "POST",
+          "confirmed": true
+        }
+      ],
+      "evidence_history_ids": [
+        "65f1a2b3c4d5e6f7a8b9c0d1"
+      ],
+      "matched_history_ids": [],
+      "confirmed_request_samples": [
+        {
+          "history_entry_id": "65f1a2b3c4d5e6f7a8b9c0d1",
+          "source_role": "manager",
+          "request_fingerprint": "POST:/api/workflow/submit"
+        }
+      ],
+      "tested_roles": [
+        {
+          "role": "manager",
+          "status": "allowed_confirmed",
+          "last_tested_at": "2026-05-19T10:00:00Z"
+        }
+      ],
+      "untested_roles": ["employee", "guest"],
+      "deferred_roles": [
+        {
+          "role": "employee",
+          "reason_code": "AUTH_SNAPSHOT_MISSING",
+          "reason": "Employee role has not produced a valid auth snapshot yet."
+        }
+      ],
+      "deferred_reasons": [
+        "AUTH_SNAPSHOT_MISSING"
+      ],
+      "irreversible": false,
+      "final_stage_required": false,
+      "status": "pending"
+    }
+  ],
+  "status_definitions": {
+    "pending": "Discovered from baseline but not yet closed",
+    "surveying": "Navigator is collecting page or API evidence for this permission",
+    "ready_for_replay": "Enough evidence exists to run replay tests",
+    "testing": "Security is actively testing this permission target",
+    "deferred": "Testing is postponed until auth, evidence, or timing conditions are satisfied",
+    "final_stage": "Reserved for intercept-first or irreversible-action testing",
+    "closed": "Permission target has enough evidence and stable results"
+  },
+  "_usage": {
+    "load_method": "Read('memory/templates/permission_targets_template.json')",
+    "primary_store": "result/permission_targets.json",
+    "mongodb_mirror": "webtest_<project_key>.permission_targets collection"
+  },
+  "_contract_notes": {
+    "entry_points": "Bind concrete menu, button, list-row, detail-page, or direct-URL entry information to each permission target.",
+    "access_steps": "Store the shortest reproducible navigation path for returning to this permission target later.",
+    "ui_locations": "Keep lightweight page-position context; text steps and simple locators are preferred over heavy DOM schemas.",
+    "confirmed_request_samples": "When a permission target has a stable request sample, keep at least one real history_entry_id or an equivalent request fingerprint.",
+    "matched_history_ids": "For irreversible actions, record matched_history_id values and keep them bound to the source permission target."
+  }
+}

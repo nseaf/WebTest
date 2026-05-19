@@ -2,8 +2,8 @@
 
 > AI-Agent Web 渗透测试系统  
 > 支持场景：Web 探索 / 越权测试 / 注入测试 / 流程审批测试  
-> 版本：1.6  
-> 更新：2026-05-11
+> 版本：1.7  
+> 更新：2026-05-19
 
 ---
 
@@ -59,7 +59,7 @@ Coordinator
 
 共享状态：
   - result/*.json
-  - MongoDB（BurpBridge 数据）
+  - MongoDB（BurpBridge 数据 + WebTest 项目级数据库）
 ```
 
 Coordinator 负责决策与调度，subagent 负责具体执行。
@@ -151,12 +151,17 @@ Coordinator 负责决策与调度，subagent 负责具体执行。
 
 1. 如需账号解析，先执行 `@account_parser`
 2. `@security init_security`
-3. `@navigator create_instance`
-4. `@navigator login_or_resume`
-5. `@navigator sync_cookies`
-6. `@navigator survey/explore`
-7. `@security test`
-8. 仅在 replay 稳定后调度 `@analyzer`
+3. Coordinator 基于账号、角色与权限矩阵生成 `result/permission_targets.json`
+4. 按权限点价值选择当前轮次角色，并仅为该角色执行：
+   - `@navigator create_instance`
+   - `@navigator login_or_resume`
+   - `@navigator sync_cookies`
+5. `@navigator survey/explore/verify_role_access`
+6. `@security test`
+7. 仅在 replay 稳定后调度 `@analyzer`
+8. 常规权限点完成后，再处理：
+   - deferred 权限点补测
+   - intercept-first 的不可逆专项
 
 ### 复杂表单路径
 
@@ -197,6 +202,31 @@ Coordinator 负责决策与调度，subagent 负责具体执行。
   - `allowed_hosts`
   - `role_access_matrix`
   - `coverage_gaps`
+  - `permission_targets`
+
+### Permission-First 规则
+
+- 默认不再预登录全部账号，也不以“当前已登录账号集合”推进测试。
+- Coordinator 必须以 `permission_key` 作为默认调度单位，而不是以账号顺序作为默认主索引。
+- 每个权限点应聚合：
+  - 允许角色/账号
+  - 禁止角色
+  - 关联页面与接口
+  - 已测试角色
+  - deferred 角色及原因
+- 若某角色可立即用于 replay，则应立即验证；若目标角色缺少有效 auth snapshot，则记录为 deferred，不强制反复重登。
+- 删除、审批通过、撤销、终止等不可逆动作应标记为最终专项，统一在最后处理。
+
+### Coordinator 审视规则
+
+- subagent 的 `suggestions` 与 `recommended_next_actions` 只作为建议输入，不得直接作为下一步动作执行。
+- Coordinator 必须先结合全局 `permission_targets`、`coverage_gaps`、`deferred_roles`、`final_stage_required`、`history_progress` 做二次审视。
+- 当 subagent 建议只覆盖局部最优，而全局仍有更高价值权限点或更高优先级缺口时，Coordinator 必须拒绝该建议并重排。
+- Coordinator 的全局审视顺序固定为：
+  - 高优先级 survey gap
+  - 高价值未闭环 permission target
+  - deferred / FINAL_STAGE
+  - subagent suggestions
 
 ---
 
@@ -216,7 +246,7 @@ Priority 2: Security Testing
 
 Priority 3: Data Management
   - result/*.json
-  - MongoDB collections
+  - project-scoped MongoDB collections
 ```
 
 ### 工具约束
@@ -269,12 +299,47 @@ Navigator 维护以下运行时会话字段：
 - `auth_context.last_synced_at`
 - `auth_state.needs_reauth`
 - `auth_state.relogin_attempts`
+- `permission_context.current_permission_key`
+- `permission_context.pending_permission_keys`
+- `permission_context.deferred_permission_keys`
 - `resume_context.task_type`
 - `resume_context.resume_target_url`
 - `resume_context.pending_urls`
 
 Security 可以把它当作 BurpBridge auth context 的本地镜像。  
 Security 在刷新 CSRF header 时，必须先本地合并，再整份回写。
+
+`history_progress` 应支持按 `permission_key + role` 跟踪 replay 光标，而不是只保存单一全局进度。
+
+### `result/permission_targets.json`
+
+Coordinator 维护权限中心运行态，至少包含以下字段：
+
+- `permission_key`
+- `module_path`
+- `menu_path`
+- `permission_name`
+- `baseline_source`
+- `allowed_roles`
+- `allowed_accounts`
+- `denied_roles`
+- `entry_points`
+- `access_steps`
+- `ui_locations`
+- `related_pages`
+- `related_apis`
+- `evidence_history_ids`
+- `matched_history_ids`
+- `confirmed_request_samples`
+- `tested_roles`
+- `untested_roles`
+- `deferred_roles`
+- `deferred_reasons`
+- `irreversible`
+- `final_stage_required`
+- `status`
+
+该文件是默认调度中心，优先级高于“当前已登录账号列表”。
 
 ### 关键事件类型
 
@@ -317,9 +382,21 @@ Security 在刷新 CSRF header 时，必须先本地合并，再整份回写。
 - 报告中对 Cookie/token 做脱敏
 - `session_name` 是浏览器会话主键
 
+MongoDB 原则：
+- WebTest 自有数据使用项目级数据库：`webtest_<project_key>`
+- `project_key` 优先使用用户显式给出的项目标识；否则使用 `target_host` 归一化生成
+- 不再通过清空单一 `webtest`/`WebTest` 数据库开始下一个项目
+- BurpBridge 自身的 `history` / `replays` 不在本次数据库改造范围内
+
 ---
 
 ## 更新记录
+
+### v1.7 (2026-05-19)
+- 默认工作流切换为权限主导，Coordinator 以 `permission_key` 调度轮次
+- 新增 `result/permission_targets.json` 作为权限中心运行态
+- 明确 deferred 权限点补测与不可逆动作最终专项阶段
+- 明确 WebTest 自有数据写入项目级数据库 `webtest_<project_key>`
 
 ### v1.6 (2026-05-11)
 - 新增 Security 自主管理的 `csrf-replay-recovery`

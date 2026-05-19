@@ -3,7 +3,10 @@
   "description": "Finding record template",
   "finding_template": {
     "finding_id": "finding_XXX",
+    "project_key": "",
+    "database_name": "",
     "session_id": "",
+    "permission_key": "",
     "vuln_type": "IDOR|XSS|SQLI|CSRF|INFO_LEAK|AUTH_BYPASS",
     "severity": "Critical|High|Medium|Low",
     "confidence": 0.0,
@@ -48,7 +51,7 @@
   },
   "_usage": {
     "load_method": "Read('memory/templates/findings_template.json')",
-    "mongodb_write": "webtest.findings collection",
+    "mongodb_write": "webtest_<project_key>.findings collection",
     "realtime_write": "Write immediately when a finding is confirmed"
   }
 }

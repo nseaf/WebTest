@@ -1,6 +1,10 @@
 {
   "$schema": "apis_schema",
   "description": "发现的API端点记录",
+  "project_key": null,
+  "database_name": null,
+  "target_host": null,
+  "session_id": null,
   "apis": [],
   "api_schema": {
     "api_id": "api_XXX",
@@ -14,6 +18,10 @@
     "sensitive_fields_found": [],
     "discovered_at": "ISO8601",
     "source_page": null,
+    "permission_keys": [],
+    "allowed_roles_hint": [],
+    "allowed_accounts_hint": [],
+    "evidence_only": true,
     "tested": false,
     "vulnerabilities": []
   },

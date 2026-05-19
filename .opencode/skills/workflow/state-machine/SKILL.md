@@ -5,16 +5,17 @@ description: "状态机定义，控制测试流程的状态转换和门控条件
 
 # State Machine Skill
 
-> 状态机定义：先全貌测绘，再定向探索，再安全测试，最后评估与报告。
+> 状态机定义：先建立权限基线，再做权限相关测绘与探索，再执行按权限点驱动的安全测试，最后处理 deferred 与不可逆专项。
 
 ## 状态定义
 
 | 状态 | 说明 | 主要 Agent | 输出产物 |
 |------|------|-----------|---------|
-| `INIT` | 初始化环境 | Coordinator 调度 | `accounts.json`, `chrome_instances.json`, `sessions.json` |
-| `SITE_SURVEY` | 全站 breadth-first 测绘 | `@navigator` | `site_survey.json`, `pages/apis/progress` |
+| `INIT` | 初始化环境与权限基线 | Coordinator 调度 | `accounts.json`, `permission_targets.json`, `sessions.json` |
+| `SITE_SURVEY` | 权限相关 breadth-first 测绘 | `@navigator` | `site_survey.json`, `pages/apis/progress` |
 | `EXPLORATION_RUNNING` | 模块深挖与角色差异验证 | `@navigator` | 模块探索记录、角色可达矩阵 |
-| `SECURITY_TESTING` | 安全测试 | `@security` + `@analyzer` | `findings collection` |
+| `SECURITY_TESTING` | 按权限点安全测试 | `@security` + `@analyzer` | `findings collection`, `permission_targets status` |
+| `FINAL_STAGE` | deferred 补测与不可逆专项 | `@security` + `@navigator` | `permission_targets final updates`, `workflow findings` |
 | `EVALUATION` | 进度评估 | Coordinator | 下一步决策 |
 | `REPORT` | 生成报告 | Coordinator | 报告文件 |
 | `END` | 测试结束 | Coordinator | 最终状态 |
@@ -25,22 +26,27 @@ description: "状态机定义，控制测试流程的状态转换和门控条件
 const stateProperties = {
   INIT: {
     timeout: 60000,
-    outputs: ["accounts.json", "chrome_instances.json", "sessions.json"]
+    outputs: ["accounts.json", "permission_targets.json", "sessions.json"]
   },
   SITE_SURVEY: {
     timeout: 180000,
     agent: "@navigator",
-    outputs: ["site_survey.json", "pages collection", "apis collection", "progress collection"]
+    outputs: ["site_survey.json", "permission_targets updates", "pages collection", "apis collection", "progress collection"]
   },
   EXPLORATION_RUNNING: {
     timeout: 180000,
     agent: "@navigator",
-    outputs: ["progress.modules[].exploration_status", "role_access_matrix"]
+    outputs: ["progress.modules[].exploration_status", "role_access_matrix", "permission target evidence"]
   },
   SECURITY_TESTING: {
     timeout: 300000,
     agents: ["@security", "@analyzer"],
-    outputs: ["findings collection", "progress.modules[].security_status"]
+    outputs: ["findings collection", "progress.modules[].security_status", "permission_targets test status"]
+  },
+  FINAL_STAGE: {
+    timeout: 300000,
+    agents: ["@security", "@navigator"],
+    outputs: ["deferred permission closures", "irreversible-action evidence"]
   },
   EVALUATION: {
     timeout: 30000,
@@ -66,7 +72,12 @@ const stateProperties = {
 ```javascript
 {
   session_id: "session_20260425_001",
+  project_key: "example_com",
+  database_name: "webtest_example_com",
   target_host: "example.com",
+  workflow_mode: "permission_first",
+  current_role: "manager",
+  current_permission_key: "workflow.approval.submit",
   current_state: "SITE_SURVEY",
   status: "running",
   updated_at: Date.now(),
@@ -114,6 +125,7 @@ EVALUATION
   ├─ continue survey       → SITE_SURVEY
   ├─ deep module explore   → EXPLORATION_RUNNING → EVALUATION
   ├─ security testing      → SECURITY_TESTING   → EVALUATION
+  ├─ deferred/final stage  → FINAL_STAGE        → EVALUATION
   └─ report                → REPORT → END
 ```
 
@@ -126,11 +138,10 @@ const gate1 = {
   name: "初始化完成",
   conditions: [
     "accounts.json 已生成",
-    "Chrome 实例启动成功",
+    "permission_targets.json 已初始化",
     "BurpBridge 健康检查通过",
     "auto_sync 已启用并验证",
-    "sessions.runtime_control.auto_sync_expected = true",
-    "登录成功（如需要）"
+    "sessions.runtime_control.auto_sync_expected = true"
   ],
   onPass: () => updateSessionState("SITE_SURVEY", "gate1 passed")
 };
@@ -177,12 +188,25 @@ const gate4 = {
 };
 ```
 
-### gate5: EVALUATION → 下一步
+### gate5: FINAL_STAGE → EVALUATION
 
 ```javascript
 const gate5 = {
+  name: "deferred 与不可逆专项完成",
+  conditions: [
+    "deferred permission roles 已处理或确认继续延期",
+    "final_stage_required 目标已处理"
+  ],
+  onPass: () => updateSessionState("EVALUATION", "final stage completed")
+};
+```
+
+### gate6: EVALUATION → 下一步
+
+```javascript
+const gate6 = {
   name: "覆盖与风险判定",
-  evaluate: async ({ progress, survey, findings }) => {
+  evaluate: async ({ progress, survey, findings, permissionTargets }) => {
     if (survey.coverage_gaps.some(g => g.priority === "critical" || g.priority === "high")) {
       return {
         nextState: "SITE_SURVEY",
@@ -203,13 +227,30 @@ const gate5 = {
       };
     }
 
-    const needsSecurity = progress.modules.some(m => m.security_status !== "completed") ||
+    const hasOpenPermissionTargets = permissionTargets.some(t =>
+      !["closed", "deferred", "final_stage"].includes(t.status)
+    );
+    const needsSecurity = hasOpenPermissionTargets ||
+      progress.modules.some(m => m.security_status !== "completed") ||
       progress.sensitive_apis?.tested < progress.sensitive_apis?.total;
     if (needsSecurity) {
       return {
         nextState: "SECURITY_TESTING",
         action: "@security test",
-        reason: "关键端点尚未完成安全测试"
+        reason: "仍有权限点或关键端点尚未完成安全测试"
+      };
+    }
+
+    const hasDeferredOrIrreversible = permissionTargets.some(t =>
+      t.status === "deferred" ||
+      (t.deferred_roles || []).length > 0 ||
+      t.final_stage_required === true
+    );
+    if (hasDeferredOrIrreversible) {
+      return {
+        nextState: "FINAL_STAGE",
+        action: "@security test|intercept-first final stage",
+        reason: "仍有 deferred 权限点或不可逆专项待处理"
       };
     }
 
@@ -230,7 +271,7 @@ const gate5 = {
 };
 ```
 
-### gate6: REPORT → END
+### gate7: REPORT → END
 
 ```javascript
 const gate6 = {

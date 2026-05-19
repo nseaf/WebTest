@@ -5,7 +5,7 @@ description: "实时数据库写入规范，防止数据丢失，解决并发写
 
 # MongoDB Writer Skill
 
-> 实时数据库写入规范 — 使用BurpBridge现有MongoDB，扩展webtest collections
+> 实时数据库写入规范 — 使用BurpBridge现有MongoDB，但 WebTest 自有数据按项目写入 `webtest_<project_key>` 数据库
 
 ---
 
@@ -28,13 +28,31 @@ description: "实时数据库写入规范，防止数据丢失，解决并发写
 
 ## 数据库架构
 
-使用BurpBridge现有MongoDB（localhost:27017），扩展以下collections：
+使用BurpBridge现有MongoDB（localhost:27017），但 WebTest 自有运行和分析数据必须写入项目级数据库。
+
+## 项目级数据库规则
+
+```text
+database_name = "webtest_" + normalize(project_key)
+```
+
+- `project_key` 优先使用用户显式提供的项目标识
+- 若用户未提供，则使用 `target_host` 归一化生成
+- 归一化规则固定为：
+  - 转小写
+  - 非字母数字字符替换为下划线
+  - 连续下划线折叠
+  - 长度超限时截断
+- 不再通过清空统一 `webtest`/`WebTest` 数据库开始下一个项目
+- BurpBridge 自身的 `history` / `replays` 集合不在本次数据库改造范围内
 
 ### Collection定义
 
 | Collection | 用途 | 写入时机 | 写入Agent |
 |------------|------|---------|-----------|
 | test_sessions | 测试会话 | Coordinator初始化 | Coordinator |
+| workflow_runs | 单次运行元数据 | Coordinator启动轮次与最终收尾 | Coordinator |
+| permission_targets | 权限点中心状态 | 基线建立、证据补全、测试状态变化时立即写入 | Coordinator/Navigator/Security |
 | findings | 漏洞发现 | Security发现立即写入 | Security |
 | apis | API发现 | Navigator发现立即写入 | Navigator |
 | pages | 页面发现 | Navigator分析后写入 | Navigator |
@@ -50,12 +68,17 @@ description: "实时数据库写入规范，防止数据丢失，解决并发写
 ```javascript
 {
   _id: ObjectId,
+  project_key: "example_com",
+  database_name: "webtest_example_com",
   session_id: "session_20260422",       // 会话标识
   target_url: "https://example.com",
   target_host: "www.example.com",
+  workflow_mode: "permission_first",
   mode: "standard",                     // quick/standard/deep
   status: "running",                    // running/completed/failed/paused
-  current_state: "ROUND_1_TEST",        // 状态机当前状态
+  current_state: "SITE_SURVEY",         // 状态机当前状态
+  current_role: "manager",
+  current_permission_key: "workflow.approval.submit",
   created_at: Date,
   updated_at: Date,
   config: {
@@ -72,12 +95,106 @@ description: "实时数据库写入规范，防止数据丢失，解决并发写
 }
 ```
 
+### workflow_runs
+
+```javascript
+{
+  _id: ObjectId,
+  project_key: "example_com",
+  session_id: "session_20260422",
+  run_id: "run_20260519_001",
+  target_host: "www.example.com",
+  round_type: "permission_round|deferred_round|final_stage",
+  role: "manager",
+  permission_key: "workflow.approval.submit",
+  status: "running|completed|deferred",
+  started_at: Date,
+  finished_at: Date
+}
+```
+
+### permission_targets
+
+```javascript
+{
+  _id: ObjectId,
+  project_key: "example_com",
+  database_name: "webtest_example_com",
+  session_id: "session_20260422",
+  permission_key: "workflow.approval.submit",
+  module_path: ["workflow", "approval"],
+  menu_path: ["流程中心", "审批管理"],
+  permission_name: "提交审批",
+  baseline_source: "permission_matrix",
+  allowed_roles: ["manager"],
+  allowed_accounts: ["test1020"],
+  denied_roles: ["employee", "guest"],
+  entry_points: [
+    {
+      entry_type: "menu",
+      entry_url: "https://example.com/workflow/approval",
+      entry_label: "审批管理",
+      source: "navigator_survey"
+    }
+  ],
+  access_steps: [
+    "从首页进入 流程中心",
+    "点击左侧菜单 审批管理",
+    "进入审批列表后打开 提交审批"
+  ],
+  ui_locations: [
+    {
+      menu_path: ["流程中心", "审批管理"],
+      page_title: "审批列表",
+      region: "主内容区",
+      element_text: "提交审批",
+      locator: null
+    }
+  ],
+  related_pages: ["https://example.com/workflow/approval"],
+  related_apis: [
+    { api_id: "api_001", url: "/api/workflow/submit", method: "POST", confirmed: true }
+  ],
+  evidence_history_ids: ["65f1a2b3c4d5e6f7a8b9c0d1"],
+  matched_history_ids: [],
+  confirmed_request_samples: [
+    {
+      history_entry_id: "65f1a2b3c4d5e6f7a8b9c0d1",
+      source_role: "manager",
+      request_fingerprint: "POST:/api/workflow/submit"
+    }
+  ],
+  tested_roles: [
+    { role: "manager", status: "allowed_confirmed", last_tested_at: Date }
+  ],
+  untested_roles: ["employee", "guest"],
+  deferred_roles: [
+    {
+      role: "employee",
+      reason_code: "AUTH_SNAPSHOT_MISSING",
+      reason: "Employee role has not produced a usable auth snapshot yet."
+    }
+  ],
+  deferred_reasons: ["AUTH_SNAPSHOT_MISSING"],
+  irreversible: false,
+  final_stage_required: false,
+  status: "ready_for_replay",
+  updated_at: Date
+}
+```
+
+规则补充：
+- 当某权限点存在稳定可复测的真实请求样本时，必须至少保留一个真实 `history_entry_id` 或等价请求指纹，不能只保留接口 URL。
+- 对不可逆动作，额外记录 `matched_history_id` 并与来源 `permission_key` 绑定。
+
 ### findings
 
 ```javascript
 {
   _id: ObjectId,
+  project_key: "example_com",
   session_id: "session_20260422",
+  permission_key: "workflow.approval.submit",
   vuln_id: "IDOR_001",                  // 漏洞标识
   type: "IDOR",                         // IDOR/XSS/SQLI/CSRF等
   severity: "High",                     // Critical/High/Medium/Low
@@ -103,12 +220,14 @@ description: "实时数据库写入规范，防止数据丢失，解决并发写
 ```javascript
 {
   _id: ObjectId,
+  project_key: "example_com",
   session_id: "session_20260422",
   api_id: "api_001",
   url: "/api/users/{id}",
   method: "GET",
   pattern_detected: "/api/users/{id}",
   module: "user",                        // 模块分类
+  permission_keys: ["workflow.approval.submit"],
   sensitive_fields: ["email", "phone"],
   test_status: "pending",                // discovered/pending/testing/tested/skipped
   tested_by: null,                       // Security Agent ID
@@ -130,11 +249,13 @@ description: "实时数据库写入规范，防止数据丢失，解决并发写
 ```javascript
 {
   _id: ObjectId,
+  project_key: "example_com",
   session_id: "session_20260422",
   page_id: "page_001",
   url: "https://example.com/dashboard",
   title: "Dashboard",
   type: "dashboard",                     // home/login/dashboard/list/detail
+  permission_keys: ["workflow.approval.submit"],
   analyzed_at: Date,
   links_found: 5,
   forms_found: 2,
@@ -147,6 +268,7 @@ description: "实时数据库写入规范，防止数据丢失，解决并发写
 ```javascript
 {
   _id: ObjectId,
+  project_key: "example_com",
   session_id: "session_20260422",
   event_id: "evt_20260422_001",
   event_type: "CAPTCHA_DETECTED",        // 事件类型
@@ -168,6 +290,7 @@ description: "实时数据库写入规范，防止数据丢失，解决并发写
 ```javascript
 {
   _id: ObjectId,
+  project_key: "example_com",
   session_id: "session_20260422",
   modules: [
     {
@@ -202,12 +325,15 @@ description: "实时数据库写入规范，防止数据丢失，解决并发写
 
 ```javascript
 mongodb-mcp-server_insert-many({
-  database: "webtest",
+  database: "webtest_example_com",
   collection: "test_sessions",
   documents: [{
+    project_key: "example_com",
+    database_name: "webtest_example_com",
     session_id: "session_20260422",
     target_url: "https://example.com",
     target_host: "www.example.com",
+    workflow_mode: "permission_first",
     mode: "standard",
     status: "running",
     current_state: "INIT",
@@ -217,18 +343,40 @@ mongodb-mcp-server_insert-many({
 })
 ```
 
+### 写入权限中心
+
+```javascript
+mongodb-mcp-server_insert-many({
+  database: "webtest_example_com",
+  collection: "permission_targets",
+  documents: [{
+    project_key: "example_com",
+    session_id: "session_20260422",
+    permission_key: "workflow.approval.submit",
+    baseline_source: "permission_matrix",
+    allowed_roles: ["manager"],
+    allowed_accounts: ["test1020"],
+    denied_roles: ["employee", "guest"],
+    status: "pending",
+    updated_at: Date.now()
+  }]
+})
+```
+
 ### 写入API发现
 
 ```javascript
 mongodb-mcp-server_insert-many({
-  database: "webtest",
+  database: "webtest_example_com",
   collection: "apis",
   documents: [{
+    project_key: "example_com",
     session_id: "session_20260422",
     api_id: "api_001",
     url: "/api/users/123",
     method: "GET",
     module: "user",
+    permission_keys: ["workflow.approval.submit"],
     sensitive_fields: ["email"],
     test_status: "discovered",
     discovered_at: Date.now()
@@ -240,10 +388,12 @@ mongodb-mcp-server_insert-many({
 
 ```javascript
 mongodb-mcp-server_insert-many({
-  database: "webtest",
+  database: "webtest_example_com",
   collection: "findings",
   documents: [{
+    project_key: "example_com",
     session_id: "session_20260422",
+    permission_key: "workflow.approval.submit",
     vuln_id: "IDOR_001",
     type: "IDOR",
     severity: "High",
@@ -265,7 +415,7 @@ mongodb-mcp-server_insert-many({
 
 ```javascript
 mongodb-mcp-server_update-many({
-  database: "webtest",
+  database: "webtest_example_com",
   collection: "apis",
   filter: { session_id: "session_20260422", api_id: "api_001" },
   update: { 
@@ -282,9 +432,10 @@ mongodb-mcp-server_update-many({
 
 ```javascript
 mongodb-mcp-server_insert-many({
-  database: "webtest",
+  database: "webtest_example_com",
   collection: "events",
   documents: [{
+    project_key: "example_com",
     session_id: "session_20260422",
     event_id: "evt_001",
     event_type: "API_DISCOVERED",
@@ -301,7 +452,7 @@ mongodb-mcp-server_insert-many({
 
 ```javascript
 mongodb-mcp-server_find({
-  database: "webtest",
+  database: "webtest_example_com",
   collection: "progress",
   filter: { session_id: "session_20260422" }
 })
@@ -317,6 +468,7 @@ mongodb-mcp-server_find({
 |------|---------|
 | sessions.json | 会话状态、Cookie信息，便于Coordinator查看 |
 | chrome_instances.json | Chrome实例注册表，便于Navigator管理 |
+| permission_targets.json | 权限点中心真相源，便于Coordinator调度和 deferred 管理 |
 
 以下数据迁移到MongoDB：
 
@@ -328,6 +480,7 @@ mongodb-mcp-server_find({
 | forms.json | forms（可选，也可保留JSON） |
 | links.json | links（可选，也可保留JSON） |
 | events.json | events |
+| permission_targets.json | permission_targets |
 
 ---
 
@@ -335,25 +488,22 @@ mongodb-mcp-server_find({
 
 ### 会话开始时
 
-Coordinator初始化时清理上一会话数据：
+Coordinator 初始化时不得清空整个历史数据库。只创建新的 `test_sessions` / `workflow_runs` 记录，并让新项目写入独立数据库。
 
 ```javascript
-mongodb-mcp-server_delete-many({
-  database: "webtest",
-  collection: "test_sessions",
-  filter: {}  // 清空所有历史会话（可选）
-})
-
-mongodb-mcp-server_delete-many({
-  database: "webtest",
-  collection: "findings",
-  filter: {}
-})
-
-mongodb-mcp-server_delete-many({
-  database: "webtest",
-  collection: "apis",
-  filter: {}
+mongodb-mcp-server_insert-many({
+  database: "webtest_example_com",
+  collection: "workflow_runs",
+  documents: [{
+    project_key: "example_com",
+    session_id: "session_20260422",
+    run_id: "run_20260519_001",
+    round_type: "permission_round",
+    role: "manager",
+    permission_key: "workflow.approval.submit",
+    status: "running",
+    started_at: Date.now()
+  }]
 })
 ```
 
@@ -364,7 +514,7 @@ mongodb-mcp-server_delete-many({
 ```javascript
 // 标记会话完成
 mongodb-mcp-server_update-many({
-  database: "webtest",
+  database: "webtest_example_com",
   collection: "test_sessions",
   filter: { session_id: "session_20260422" },
   update: { $set: { status: "completed", updated_at: Date.now() } }

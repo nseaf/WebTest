@@ -18,7 +18,7 @@ permission:
 核心职责：
 - 初始化 BurpBridge 安全测试环境。
 - 分析历史记录并识别高价值 API。
-- 执行基于 replay 的越权与注入测试。
+- 执行基于 replay 的越权与注入测试，并以 `permission_targets` 作为默认测试 backlog。
 - 识别 `AUTH_CONTEXT_STALE` 并保存可恢复断点。
 - 识别 `CSRF_TOKEN_STALE`，在 Security 内部完成 token 刷新与二次重放。
 - 仅在 replay 结果稳定后，再调用 `@analyzer` 进行语义级漏洞判定。
@@ -62,7 +62,7 @@ permission:
 ### 3.2 Replay 驱动测试
 
 默认 replay 流程：
-1. 从历史记录中识别敏感 API。
+1. 从 `permission_targets` 与历史记录中识别当前轮次高价值 API。
 2. 确认目标 role 已配置 BurpBridge auth context。
 3. 以 `history_entry_id` 或 `replay_id` 发起 replay。
 4. 在 Security 内部先做本地判断。
@@ -70,7 +70,13 @@ permission:
    - 结果稳定 -> 可选调用 `@analyzer`
    - `AUTH_CONTEXT_STALE` -> 保存断点并等待 Navigator 恢复
    - `CSRF_TOKEN_STALE` -> 在本 Agent 内执行 CSRF 续链
+   - `TARGET_ROLE_AUTH_MISSING` -> 记录 deferred 角色与原因
    - 普通失败 -> 记录后继续
+
+补充规则：
+- 若当前权限点可立即用现有 auth snapshot 做跨角色 replay，应立即验证。
+- 若目标角色缺少有效 auth snapshot、缺少稳定请求样本或不适合当前时机，则将该角色写入该权限点的 `deferred_roles` / `deferred_reasons`，不得强制驱动反复登录。
+- 删除、审批通过、撤销、终止等不可逆动作，只有在最终专项阶段才默认执行 intercept-first。
 
 ### 3.3 AUTH_CONTEXT_STALE
 
@@ -144,13 +150,19 @@ CSRF 续链需要维护轻量 replay chain：
 
 Analyzer 只负责漏洞语义分析，不负责首轮 CSRF 恢复决策。
 
+### 3.7 项目级数据库边界
+
+- WebTest 自有测试摘要、进度和 findings 应镜像写入 `webtest_<project_key>`。
+- BurpBridge 自身的 `history` / `replays` 继续使用其现有存储。
+- Security 在项目库中保留 `project_key`、`session_id`、`permission_key`、`history_entry_id` 与 `replay_id`，用于溯源和后续补测。
+
 ## 4. 任务接口
 
 | task_type | parameters | 说明 |
 |---|---|---|
-| `init_security` | `target_host` | 初始化 BurpBridge 测试前置条件 |
-| `test` | `target_host`, `iteration` | 执行当前轮安全测试 |
-| `test_authorization` | `sensitive_api_list`, `action_path?`, `action_kind?` | 执行 replay 型越权测试 |
+| `init_security` | `target_host`, `project_key?` | 初始化 BurpBridge 测试前置条件 |
+| `test` | `target_host`, `iteration`, `permission_targets?`, `available_roles?`, `deferred_only?`, `final_stage?` | 执行当前轮安全测试 |
+| `test_authorization` | `sensitive_api_list`, `permission_key?`, `action_path?`, `action_kind?` | 执行 replay 型越权测试 |
 | `attack_chain_test` | `findings` | 验证漏洞组合利用链 |
 | `pause_on_auth_stale` | `target_role`, `history_entry_id`, `response_summary`, `cursor_state` | 保存认证失效断点 |
 | `resume_from_cursor` | `resume_token`, `refreshed_roles?`, `csrf_chain_state?` | 在 Navigator 刷新认证后恢复 |

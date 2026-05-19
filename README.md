@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-本项目是一个基于 Claude Code 的多Agent Web渗透测试系统。通过 **Coordinator + Subagent + Skill** 三层架构，利用AI技术模拟人工前端Web测试，实现自主探索、安全测试和漏洞发现。
+本项目是一个基于 Claude Code 的多Agent Web渗透测试系统。通过 **Coordinator + Subagent + Skill** 三层架构，利用AI技术模拟人工前端Web测试，实现自主探索、安全测试和漏洞发现。当前默认工作流已切换为 **permission-first**，以权限点而非账号顺序作为测试主索引。
 
 ## 系统架构
 
@@ -21,7 +21,7 @@
         │
         └──────────────────────────────────────┘
                            │
-              共享状态: result/*.json + MongoDB
+              共享状态: result/*.json + MongoDB（BurpBridge + WebTest项目级数据库）
 ```
 
 **注意**: Navigator 已合并 Scout 功能，系统现为 **6 个 Agent**（1 Coordinator + 5 subagents）。
@@ -71,18 +71,21 @@ Skills 是可复用的方法论模块，位于 `.opencode/skills/`：
 | **Agent框架** | Claude Code | 基于 Prompt 的角色扮演 |
 | **浏览器自动化** | browser-use CLI + wrapper | 支持多Chrome实例、会话复用、固定Chrome启动参数与Windows下统一输出 |
 | **安全测试** | BurpBridge MCP | BurpSuite插件，请求重放 |
-| **数据存储** | MongoDB | BurpBridge依赖 |
+| **数据存储** | MongoDB | BurpBridge依赖 + WebTest项目级数据库 `webtest_<project_key>` |
 
 ## 关键特性
 
-- **多Chrome实例管理** - 每个账号独立Chrome实例和CDP端口，首次 attach 后统一复用 `session_name`
+- **Permission-First 流程** - 先建立权限基线与 `result/permission_targets.json`，再按权限点驱动角色轮次
+- **按需登录** - 不再预登录全部账号，只为当前高价值权限点按需登录相关角色
+- **多Chrome实例管理** - 仍保留多实例能力，但默认用于按需角色轮次，而不是统一多账号保活
 - **统一Chrome启动参数** - 通过 `scripts/start-managed-chrome.ps1` 固定追加 `--no-first-run` 与 `--no-default-browser-check`
 - **Survey-First 流程** - 新会话先执行 `SITE_SURVEY`，输出模块、角色可达性与覆盖缺口，再进入定向探索或安全测试
 - **登录职责收敛** - Navigator 统一负责登录、会话判活、快速复登与 Cookie 同步
 - **认证恢复闭环** - Security 发现 `AUTH_CONTEXT_STALE` 后由 Navigator 刷新认证并续跑
+- **Deferred 与 FINAL_STAGE** - 无法立即跨角色验证的权限点先延期，删除/审批/撤销等不可逆动作留在最终专项阶段
 - **智能标签页处理** - 点击后自动执行 tab 对账与切换验证
 - **API发现** - 网络请求分析、API模式识别、敏感数据检测
-- **并行架构** - Security Agent与探索Agent并行运行
+- **Coordinator 全局审视** - subagent 只提供建议，Coordinator 必须先看全局权限点、缺口与最终专项，不能盲从局部建议
 - **流程审批测试** - 权限文档解析、请求重放越权测试（不影响原流程）
 
 ## Survey-First 关键任务
@@ -96,6 +99,7 @@ Skills 是可复用的方法论模块，位于 `.opencode/skills/`：
 - `allowed_hosts`
 - `role_access_matrix`
 - `coverage_gaps`
+- `permission_targets`
 
 ## 目录结构
 
@@ -117,6 +121,7 @@ WebTest/
 │       └── data/         # 数据处理 Skills
 ├── config/               # 配置文件
 ├── result/               # 测试输出 (不提交git)
+│   ├── permission_targets.json # 权限点中心运行态
 ├── AGENTS.md             # Agent 权威参考
 ├── CLAUDE.md             # Claude Code 项目指导
 └── README.md             # 本文件
@@ -151,6 +156,23 @@ browser-use doctor
 | **AGENTS.md** | 完整 Agent 定义和工作流 |
 | **.opencode/skills/SKILLS.md** | Skills 系统文档 |
 | **CLAUDE.md** | Claude Code 项目指导 |
+
+## 工作流摘要
+
+1. 解析账号、角色与权限矩阵
+2. 初始化 `result/permission_targets.json`
+3. 由 Coordinator 选择当前最有价值的 `permission_key`
+4. 仅为当前权限点按需登录相关角色
+5. 由 Navigator 回填页面入口、访问步骤、页面位置、接口与请求样本
+6. 由 Security 做 replay 测试；无法立即验证的角色记入 deferred
+7. 由 Coordinator 统一审视全局缺口，再决定继续权限轮次、进入 `FINAL_STAGE`，或结束
+
+## MongoDB 约定
+
+- WebTest 自有数据写入项目级数据库：`webtest_<project_key>`
+- `project_key` 优先使用用户显式给出的项目标识；否则使用 `target_host` 归一化生成
+- 不再通过清空统一 `webtest`/`WebTest` 数据库开始下一个项目
+- BurpBridge 自身的 `history` / `replays` 仍保持原有边界
 
 ## 事件类型
 

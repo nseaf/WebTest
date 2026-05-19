@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-AI-Agent Web渗透测试系统，采用 **Coordinator + Subagent + Skill** 三层架构。系统自主探索Web应用，发现表单和导航路径，并执行安全测试（越权检测、注入测试）。
+AI-Agent Web渗透测试系统，采用 **Coordinator + Subagent + Skill** 三层架构。系统自主探索Web应用，发现表单和导航路径，并执行安全测试（越权检测、注入测试）。当前默认工作流已切换为 **permission-first**，以权限点而不是账号顺序作为测试主索引。
 
 ## Agent 架构
 
@@ -83,7 +83,7 @@ browser-use doctor
 | **Agent框架** | Claude Code | 基于 Prompt 的角色扮演 |
 | **浏览器自动化** | browser-use CLI + Skill | 支持多Chrome实例 |
 | **安全测试** | BurpBridge MCP | BurpSuite插件，请求重放 |
-| **数据存储** | MongoDB | BurpBridge依赖 |
+| **数据存储** | MongoDB | BurpBridge依赖 + WebTest项目级数据库 `webtest_<project_key>` |
 
 ## 目录结构
 
@@ -107,6 +107,7 @@ WebTest/
 │   └── accounts.json     # 账号配置
 ├── result/               # 测试输出 (不提交git)
 │   ├── chrome_instances.json
+│   ├── permission_targets.json
 │   ├── sessions.json
 │   ├── events.json
 │   ├── pages.json
@@ -120,6 +121,22 @@ WebTest/
 ```
 
 ## Browser-use CLI 使用
+
+## 默认工作流
+
+1. 解析账号、角色与权限矩阵
+2. 初始化 `result/permission_targets.json`
+3. 由 Coordinator 选择当前最有价值的 `permission_key`
+4. 仅为当前权限点按需登录相关角色
+5. 由 Navigator 回填页面入口、访问步骤、页面位置、接口与请求样本
+6. 由 Security 做 replay 测试；无法立即验证的角色记入 deferred
+7. 由 Coordinator 统一审视全局缺口，再决定继续权限轮次、进入 `FINAL_STAGE`，或结束
+
+### Coordinator 审视规则
+
+- subagent 的 `suggestions` 与 `recommended_next_actions` 只作为建议输入
+- Coordinator 必须先看全局 `permission_targets`、`coverage_gaps`、`deferred_roles`、`final_stage_required`、`history_progress`
+- 当局部建议与全局高价值权限点冲突时，Coordinator 必须拒绝该建议并重排
 
 ### 调用方式
 

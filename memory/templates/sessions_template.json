@@ -2,6 +2,10 @@
   "$schema": "sessions_schema",
   "description": "Navigator-maintained browser session and BurpBridge auth-context mirror",
   "note": "This file stores dynamic auth data, session health, and resume context. Security may read auth_context as the local mirror before replay retries.",
+  "project_key": null,
+  "database_name": null,
+  "target_host": null,
+  "workflow_mode": "permission_first",
   "sessions": [
     {
       "session_name": "admin_001",
@@ -26,6 +30,12 @@
         "relogin_attempts": 0,
         "expires_at": null,
         "last_refresh_at": null
+      },
+      "permission_context": {
+        "current_permission_key": null,
+        "pending_permission_keys": [],
+        "deferred_permission_keys": [],
+        "last_permission_round_at": null
       },
       "resume_context": {
         "task_type": null,
@@ -74,7 +84,11 @@
     "runtime_control.auto_sync_verified_at": "When auto sync was last verified",
     "runtime_control.auto_sync_last_repair_at": "When auto sync was last repaired",
     "runtime_control.auto_sync_owner": "Agent currently responsible for the auto sync requirement",
-    "history_progress": "Security history scan and replay cursor state"
+    "permission_context.current_permission_key": "Permission target currently being exercised by this session",
+    "permission_context.pending_permission_keys": "Permission targets that this live session can still help close",
+    "permission_context.deferred_permission_keys": "Permission targets deferred because replay or auth conditions were not met",
+    "permission_context.last_permission_round_at": "Last time this session was used in a permission-led round",
+    "history_progress": "Security replay cursor state, keyed by permission_key + role when applicable"
   },
   "status_definitions": {
     "pending": "Waiting for login or attach",
