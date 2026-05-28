@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-AI-Agent Web渗透测试系统，采用 **Coordinator + Subagent + Skill** 三层架构。系统自主探索Web应用，发现表单和导航路径，并执行安全测试（越权检测、注入测试）。当前默认工作流已切换为 **permission-first**，以权限点而不是账号顺序作为测试主索引。
+AI-Agent Web渗透测试系统，采用 **Coordinator + Subagent + Skill** 三层架构。系统自主探索Web应用，发现表单和导航路径，并执行安全测试（越权检测、注入测试）。当前默认工作流已切换为 **permission-first**，并进一步明确为“按账号双阶段轮次”：每个账号轮次都先由 Navigator 记录有权限证据，再由 Security 对当前账号执行 denied replay。
 
 ## Agent 架构
 
@@ -126,17 +126,24 @@ WebTest/
 
 1. 解析账号、角色与权限矩阵
 2. 初始化 `result/permission_targets.json`
-3. 由 Coordinator 选择当前最有价值的 `permission_key`
-4. 仅为当前权限点按需登录相关角色
-5. 由 Navigator 回填页面入口、访问步骤、页面位置、接口与请求样本
-6. 由 Security 做 replay 测试；无法立即验证的角色记入 deferred
-7. 由 Coordinator 统一审视全局缺口，再决定继续权限轮次、进入 `FINAL_STAGE`，或结束
+3. 由 Coordinator 选择当前最有价值的账号/角色与 `permission_key`
+4. 仅为当前账号按需登录，并初始化本轮 `navigator phase` 与 `security phase`
+5. 由 Navigator 回填页面入口、访问步骤、页面位置、接口与请求样本，并补齐 `allowed_roles / allowed_accounts / denied_roles`
+6. 由 Security 紧接着测试“前序已探索过、且当前账号应无权限”的 denied backlog；若无目标则返回 `success/no_targets`
+7. 由 Coordinator 整理未完成的 `permission_key + role/account`，决定继续下一账号轮次、进入补轮次 / `FINAL_STAGE`，或结束
+
+补充约束：
+- 不允许“所有账号先跑 Navigator，最后统一跑 Security”
+- 在当前账号的 Security 子阶段结束前，不得切到下一个账号
+- 第一轮中每个账号只处理“自己 + 前序账号”已经形成证据链的权限点
+- 若中途出现超时、掉线或认证失效，恢复时优先继续未完成轮次
 
 ### Coordinator 审视规则
 
 - subagent 的 `suggestions` 与 `recommended_next_actions` 只作为建议输入
 - Coordinator 必须先看全局 `permission_targets`、`coverage_gaps`、`deferred_roles`、`final_stage_required`、`history_progress`
 - 当局部建议与全局高价值权限点冲突时，Coordinator 必须拒绝该建议并重排
+- 每轮评估前必须先确认：当前账号的 Navigator 子阶段已完成，且 Security 子阶段已完成或合法 `no_targets`
 
 ### 调用方式
 

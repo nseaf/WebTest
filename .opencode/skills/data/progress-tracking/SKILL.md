@@ -1,18 +1,18 @@
 ---
 name: progress-tracking
-description: "访问跟踪与进度控制，按模块/子模块/角色覆盖记录 Survey、Exploration、Security 三类进度。"
+description: "访问跟踪与进度控制，按账号双阶段轮次记录 Navigator 取证、Security denied replay 与补轮次进度。"
 ---
 
 # Progress Tracking Skill
 
-> 进度控制不再只看单轮页面数，而是跟踪模块、子模块、角色覆盖和安全测试状态。
+> 进度控制不再只看单轮页面数，而是跟踪模块、子模块、角色覆盖、当前账号双阶段执行状态与补轮次状态。
 
 ## 核心功能
 
 1. 模块 / 子模块自动归类
-2. Survey / Exploration / Security 三阶段状态跟踪
+2. 当前账号 `navigator phase` / `security phase` 双阶段状态跟踪
 3. 角色覆盖与可达性跟踪
-4. 关键缺口驱动的下一轮决策
+4. 未完成 `permission_key + role/account` 驱动的下一轮决策
 
 ## API 模块划分
 
@@ -48,6 +48,15 @@ security_status: pending|in_progress|completed|blocked
 {
   _id: ObjectId,
   session_id: "session_20260422",
+  current_round: {
+    account_id: "test1020",
+    role: "manager",
+    permission_key: "workflow.approval.submit",
+    navigator_phase: "completed",
+    security_phase: "pending",
+    negative_backlog_count: 1,
+    security_skip_reason: null
+  },
   modules: [
     {
       module_name: "workflow",
@@ -116,13 +125,22 @@ security_status: pending|in_progress|completed|blocked
     tested: 3,
     coverage_percentage: 30.0
   },
+  pending_role_permission_pairs: [
+    {
+      permission_key: "workflow.approval.submit",
+      role: "employee",
+      account_id: "test2040",
+      pending_stage: "security_phase",
+      reason: "AUTH_CONTEXT_STALE"
+    }
+  ],
   sensitive_apis: {
     total: 5,
     tested: 2,
     untested: ["api_003", "api_004", "api_005"]
   },
   history_progress: {
-    "target.example.com|GET|/api/*": {
+    "workflow.approval.submit|employee": {
       main_scan: {
         current_page: 3,
         last_processed_timestamp_ms: 1714090000000,
@@ -153,12 +171,18 @@ security_status: pending|in_progress|completed|blocked
 
 ## 进度判定重点
 
+- 每个账号轮次都必须显式记录 `navigator phase` 与 `security phase`，不能只看全局 survey/exploration/security 状态。
+- 第一轮首个账号若没有 denied backlog，也必须把 `security phase` 记录为 `no_targets`，而不是缺失。
+- 第一轮中每个账号只需要处理“自己 + 前序账号”已经形成证据链的权限点，不能把后续账号尚未探索的权限点提前计入当前轮 backlog。
+- 每轮结束后必须整理未完成的 `permission_key + role/account`，作为后续补轮次输入。
+
 ## 历史扫描规则
 
 - `main_scan` 是 Security 的默认主线，必须按页顺序从旧到新推进
 - `reverse_probes` 只在高危接口或高风险模块触发时创建
 - reverse probe 的页码、命中记录和结束时间必须独立记录
 - reverse probe 不得覆盖 `main_scan.current_page` 或其 watermark
+- `history_progress` 的主键应能映射到 `permission_key + 当前被测 denied role`，避免同一 denied replay 被重复执行
 
 ### Survey
 
@@ -175,6 +199,7 @@ security_status: pending|in_progress|completed|blocked
 
 ### Security
 
+- 当前账号 denied backlog 是否已完成或合法 `no_targets`
 - 敏感 API 覆盖率是否达标
 - 高优先级模块 `security_status` 是否完成
 
@@ -199,6 +224,10 @@ function checkSurveyGaps(progress) {
 
 ```javascript
 function checkExplorationNeeds(progress) {
+  if (progress.current_round?.navigator_phase !== "completed") {
+    return { answer: "YES", action: "继续当前账号 navigator phase" };
+  }
+
   const needs = progress.modules.some(m =>
     m.exploration_status !== "completed" ||
     (m.role_coverage || []).some(r => r.status === "unverified")
@@ -209,7 +238,10 @@ function checkExplorationNeeds(progress) {
 
 ### Q3: 关键端点是否都测试了？
 
-保留敏感 API 覆盖率和高优先级模块安全状态判定。
+保留敏感 API 覆盖率和高优先级模块安全状态判定，同时补充：
+- 当前账号 `security phase` 是否已完成
+- `pending_role_permission_pairs` 是否仍存在
+- denied replay 是否已经写回对应 `permission_key`
 
 ## 加载要求
 

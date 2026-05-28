@@ -5,7 +5,7 @@ description: "状态机定义，控制测试流程的状态转换和门控条件
 
 # State Machine Skill
 
-> 状态机定义：先建立权限基线，再做权限相关测绘与探索，再执行按权限点驱动的安全测试，最后处理 deferred 与不可逆专项。
+> 状态机定义：先建立权限基线，再按账号轮次执行“Navigator 取证 + Security denied replay”双阶段，最后处理 deferred 与不可逆专项。
 
 ## 状态定义
 
@@ -19,6 +19,14 @@ description: "状态机定义，控制测试流程的状态转换和门控条件
 | `EVALUATION` | 进度评估 | Coordinator | 下一步决策 |
 | `REPORT` | 生成报告 | Coordinator | 报告文件 |
 | `END` | 测试结束 | Coordinator | 最终状态 |
+
+## 账号轮次语义
+
+- 保留现有状态名，但执行语义改成“每个账号轮次必须跑完两个连续子阶段”。
+- `SITE_SURVEY` / `EXPLORATION_RUNNING` 都表示当前账号轮次中的 Navigator 子阶段。
+- `SECURITY_TESTING` 表示同一账号轮次紧随其后的 Security 子阶段。
+- 任一 Navigator 状态完成后，默认进入当前账号的 `SECURITY_TESTING`，而不是先切下一个账号。
+- 只有当前账号的 Navigator 与 Security 都完成，或 Security 合法返回 `no_targets`，才允许进入 `EVALUATION`。
 
 ## 状态属性
 
@@ -76,8 +84,11 @@ const stateProperties = {
   database_name: "webtest_example_com",
   target_host: "example.com",
   workflow_mode: "permission_first",
+  current_account_id: "test1020",
   current_role: "manager",
   current_permission_key: "workflow.approval.submit",
+  current_round_stage: "navigator_phase|security_phase|evaluation",
+  current_round_backlog_count: 0,
   current_state: "SITE_SURVEY",
   status: "running",
   updated_at: Date.now(),
@@ -121,9 +132,11 @@ INIT
   ↓ gate1
 SITE_SURVEY
   ↓ gate2
+SECURITY_TESTING
+  ↓ gate4
 EVALUATION
   ├─ continue survey       → SITE_SURVEY
-  ├─ deep module explore   → EXPLORATION_RUNNING → EVALUATION
+  ├─ deep module explore   → EXPLORATION_RUNNING → SECURITY_TESTING → EVALUATION
   ├─ security testing      → SECURITY_TESTING   → EVALUATION
   ├─ deferred/final stage  → FINAL_STAGE        → EVALUATION
   └─ report                → REPORT → END
@@ -147,31 +160,31 @@ const gate1 = {
 };
 ```
 
-### gate2: SITE_SURVEY → EVALUATION
+### gate2: SITE_SURVEY → SECURITY_TESTING
 
 ```javascript
 const gate2 = {
-  name: "测绘轮次完成",
+  name: "当前账号 Navigator 子阶段完成",
   triggerConditions: [
     "Navigator 返回 success 或 partial",
     "site_map_report 已生成",
     "recovery_actions 已回传",
     "requires_user_action = false 或已完成用户操作"
   ],
-  onPass: () => updateSessionState("EVALUATION", "site survey round completed")
+  onPass: () => updateSessionState("SECURITY_TESTING", "navigator phase completed")
 };
 ```
 
-### gate3: EXPLORATION_RUNNING → EVALUATION
+### gate3: EXPLORATION_RUNNING → SECURITY_TESTING
 
 ```javascript
 const gate3 = {
-  name: "模块深挖完成",
+  name: "当前账号深挖子阶段完成",
   triggerConditions: [
     "Navigator 返回 success 或 partial",
     "目标模块 exploration_status 已更新"
   ],
-  onPass: () => updateSessionState("EVALUATION", "module exploration round completed")
+  onPass: () => updateSessionState("SECURITY_TESTING", "navigator exploration phase completed")
 };
 ```
 
@@ -179,12 +192,12 @@ const gate3 = {
 
 ```javascript
 const gate4 = {
-  name: "安全测试完成",
+  name: "当前账号 Security 子阶段完成",
   conditions: [
-    "Security 测试完成",
-    "Analyzer 分析完成"
+    "Security 测试完成，或明确返回 no_denied_targets",
+    "若存在稳定 replay，则 Analyzer 分析完成"
   ],
-  onPass: () => updateSessionState("EVALUATION", "security testing completed")
+  onPass: () => updateSessionState("EVALUATION", "current account security phase completed")
 };
 ```
 
@@ -207,6 +220,22 @@ const gate5 = {
 const gate6 = {
   name: "覆盖与风险判定",
   evaluate: async ({ progress, survey, findings, permissionTargets }) => {
+    if (progress.current_round?.navigator_phase !== "completed") {
+      return {
+        nextState: "SITE_SURVEY",
+        action: "@navigator survey_site|deep_explore_module|verify_role_access",
+        reason: "当前账号 Navigator 子阶段尚未完成"
+      };
+    }
+
+    if (!["completed", "no_targets"].includes(progress.current_round?.security_phase)) {
+      return {
+        nextState: "SECURITY_TESTING",
+        action: "@security test",
+        reason: "当前账号 Security 子阶段尚未完成"
+      };
+    }
+
     if (survey.coverage_gaps.some(g => g.priority === "critical" || g.priority === "high")) {
       return {
         nextState: "SITE_SURVEY",
@@ -246,11 +275,12 @@ const gate6 = {
       (t.deferred_roles || []).length > 0 ||
       t.final_stage_required === true
     );
-    if (hasDeferredOrIrreversible) {
+    const hasUnfinishedRoundPairs = (progress.pending_role_permission_pairs || []).length > 0;
+    if (hasDeferredOrIrreversible || hasUnfinishedRoundPairs) {
       return {
         nextState: "FINAL_STAGE",
         action: "@security test|intercept-first final stage",
-        reason: "仍有 deferred 权限点或不可逆专项待处理"
+        reason: "仍有 deferred、未完成补轮次或不可逆专项待处理"
       };
     }
 
@@ -337,17 +367,24 @@ function handleAgentReturn(agentResult, agentName, currentState) {
   }
 
   if (currentState === "SITE_SURVEY" && agentName === "navigator") {
-    updateSessionState("EVALUATION");
+    updateSessionState("SECURITY_TESTING", "navigator phase completed");
     return;
   }
 
   if (currentState === "EXPLORATION_RUNNING" && agentName === "navigator") {
-    updateSessionState("EVALUATION");
+    updateSessionState("SECURITY_TESTING", "navigator exploration phase completed");
     return;
   }
 
+  if (currentState === "SECURITY_TESTING" && agentName === "security") {
+    if (agentResult.report?.security_skip_reason === "no_denied_targets" || agentResult.report?.analysis_required === false) {
+      updateSessionState("EVALUATION", "security phase completed without analyzer");
+      return;
+    }
+  }
+
   if (currentState === "SECURITY_TESTING" && agentName === "analyzer") {
-    updateSessionState("EVALUATION");
+    updateSessionState("EVALUATION", "security phase completed with analyzer");
   }
 }
 ```

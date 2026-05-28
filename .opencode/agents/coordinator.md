@@ -43,6 +43,7 @@ Coordinator 只负责决定“做什么”和“由谁去做”，具体执行�
 核心原则：
 - 默认先 `survey-first`，先建立覆盖面，再做定向深挖和安全测试。
 - 默认改为 `permission-first` 调度：先建立权限基线与待测权限队列，再按权限点驱动角色测试。
+- 每个账号/角色轮次必须包含两个连续子阶段：先 `@navigator` 做当前账号的有权限探索，再 `@security` 做当前账号的无权限 replay 测试。
 - 不预登录全部账号，不为保活所有角色做无差别重登或全量 `sync_cookies`。
 - `Navigator` 统一负责登录、会话判活、认证恢复和 `sync_cookies`。
 - `Form` 只负责复杂业务表单。
@@ -88,22 +89,26 @@ Coordinator 只负责决定“做什么”和“由谁去做”，具体执行�
 2. 检查环境前置条件。
 3. `@security init_security`
 4. 基于 `accounts.json` 与 `permission_matrix.json` 初始化或刷新 `result/permission_targets.json`。
-5. 选择当前最有价值的 `permission_key` 与对应首个角色轮次。
+5. 选择当前最有价值的 `permission_key` 与对应首个账号/角色轮次。
 6. 仅为当前轮次角色调度：
    - `@navigator create_instance`
    - `@navigator login_or_resume`
    - `@navigator sync_cookies`
+7. 初始化当前轮次进度时，必须显式记录：
+   - `navigator phase = pending`
+   - `security phase = pending`
+   - 当前轮次待补测的 `permission_key + role/account` 列表
 
 ### Step 2: SITE_SURVEY
 
 1. `@navigator survey_site`
 2. 更新测绘状态。
 3. 将 `role_access_matrix`、`confirmed_apis`、`api_hints` 和页面证据回填到 `result/permission_targets.json`。
-3. 决定后续进入：
-   - `continue_survey`
-   - `deep_explore_module`
-   - `verify_role_access`
-   - 或 `SECURITY_TESTING`
+4. 当前账号在 Navigator 子阶段只负责：
+   - 访问自己有权限的页面、接口和操作；
+   - 按 `permission_key` 回填 `allowed_roles`、`allowed_accounts`、`denied_roles`、`related_pages`、`related_apis` 与 `confirmed_request_samples.history_entry_id`；
+   - 标识本轮新增/更新了哪些 `permission_key`，供随后 Security 直接消费。
+5. Navigator 子阶段完成后，默认进入同一账号轮次的 `SECURITY_TESTING`，不得先切到下一个账号的 Navigator。
 
 ### Step 3: EXPLORATION_RUNNING
 
@@ -111,34 +116,40 @@ Coordinator 只负责决定“做什么”和“由谁去做”，具体执行�
 2. 如果遇到复杂业务表单：
    - `@form process_complex_form`
    - 然后 `@navigator resume_navigation_context`
-3. 当前轮次应始终围绕所选 `permission_key`、邻近无权限点和高风险关联接口推进。
-4. 当目标权限点证据充足后，转入安全测试。
+3. 当前轮次应始终围绕所选 `permission_key`、当前账号有权限的操作样本、邻近无权限点和高风险关联接口推进。
+4. 深挖结果必须继续按 `permission_key` 聚合，不能拆成独立账号记录。
+5. 当目标权限点证据充足后，直接转入当前账号的安全测试；Coordinator 不得跳过该账号的 Security 子阶段。
 
 ### Step 4: SECURITY_TESTING
 
-1. 由 `@security` 基于 `permission_targets` backlog 执行 `test_authorization`、`test`、`attack_chain_test` 或注入测试。
-2. 若可立即跨角色 replay，则立即验证；若目标角色缺少有效 auth snapshot，则记入 `deferred_roles` / `deferred_reasons`，不要强制回到多账号反复登录。
-2. 如果 Security 返回 `AUTH_CONTEXT_STALE`：
+1. 由 `@security` 基于 `permission_targets` 中“前序账号已确认有权限、且当前账号应无权限”的 backlog 执行 replay 型越权测试。
+2. 当前账号的 Security 输入优先来自已绑定到 `permission_key` 的 `history_entry_id` / 请求样本，而不是重新全局扫 history。
+3. 第一轮首个账号也必须进入 Security 子阶段；若当前 denied backlog 为空，则返回 `success/no_targets`，但该轮次仍算完整执行。
+4. 若可立即跨角色 replay，则立即验证；若源样本依赖的角色 auth 已失效或当前时机不适合，则将当前账号写入对应 `permission_key` 的 `deferred_roles` / `deferred_reasons`，不要强制回到多账号反复登录。
+5. 在当前账号的 Security 子阶段结束前，Coordinator 不得切到下一个账号的 Navigator。
+6. 如果 Security 返回 `AUTH_CONTEXT_STALE`：
    - `@security pause_on_auth_stale`
    - `@navigator refresh_auth_session`
    - `@navigator sync_cookies`
    - `@security resume_from_cursor`
-3. 如果 Security 返回 `CSRF_TOKEN_STALE`：
+7. 如果 Security 返回 `CSRF_TOKEN_STALE`：
    - 保持处理在 `@security` 内部
    - `@security handle_csrf_retry`
-4. 如果 Security 返回 `AUTH_CONTEXT_SNAPSHOT_MISSING`：
+8. 如果 Security 返回 `AUTH_CONTEXT_SNAPSHOT_MISSING`：
    - `@navigator sync_cookies`
    - `@security handle_csrf_retry`
-5. 只有当 replay 已稳定后：
+9. 只有当 replay 已稳定后：
    - 再调度 `@analyzer` 做语义漏洞分析
    - 至少传入：`replay_id`、`source_role`、`target_role`、`history_entry_id`
    - 如已知，再补充：`node_name`、`module`、`expected_permission`
+10. 若中途发生会话超时、BurpBridge 异常或 role 样本不足，必须保留当前轮次未完成的 `permission_key + role/account` 组合，并在恢复后优先继续，而不是直接切下一个账号。
 
 ### Step 5: FINAL_STAGE
 
-1. 当常规权限点已闭环后，统一处理 `deferred` 权限点。
-2. 对 `final_stage_required=true` 或 `irreversible=true` 的权限点，使用 intercept-first 流程专项处理。
-3. 仅在最终专项阶段需要时，才安排多角色并行或补登录。
+1. 当常规账号轮次已跑完后，统一整理每轮未完成的 `permission_key + role/account` 组合，进入补测。
+2. `deferred` 权限点应参照第一轮双阶段模型逐个补齐：选择一个待补角色登录，先补 Navigator 必要证据，再执行对应 Security。
+3. 对 `final_stage_required=true` 或 `irreversible=true` 的权限点，使用 intercept-first 流程专项处理。
+4. 仅在最终专项阶段需要时，才安排多角色并行或补登录。
 
 ### Step 6: EVALUATION
 
@@ -150,12 +161,19 @@ Coordinator 在 EVALUATION 中必须做全局审视，不允许直接采纳任�
 3. deferred 角色与 `FINAL_STAGE`
 4. subagent `suggestions` / `recommended_next_actions`
 
+本阶段先做当前轮次完整性检查：
+- 当前账号的 `navigator phase` 是否完成；
+- 当前账号的 `security phase` 是否完成，或是否为合法 `no_targets`；
+- 当前账号是否仍有因异常中断留下的未完成 `permission_key + role/account` 组合。
+
 只要满足以下任一条件，就继续循环：
 - 仍有高价值 survey gap；
 - 仍有模块需要深挖；
 - 仍有角色访问差异未核实；
 - 仍有重要 `permission_key` 未闭环；
 - 仍有 deferred 角色待补测；
+- 仍有“前序账号已发现、但当前账号尚未完成 denied replay”的权限点；
+- 仍有因超时、认证失效或异常中断而未闭合的账号轮次；
 - 仍有 `final_stage_required=true` 的不可逆专项未处理；
 - 已发现漏洞还需要链式验证。
 

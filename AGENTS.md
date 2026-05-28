@@ -71,9 +71,9 @@ Coordinator 负责决策与调度，subagent 负责具体执行。
 | Agent | 模式 | 角色 | 主要职责 |
 |---|---|---|---|
 | Coordinator | primary | 主调度器 | 规划、委派、异常处理、进度跟踪 |
-| Navigator | subagent | 浏览器/会话专家 | Chrome 管理、登录、会话判活、认证恢复、站点测绘、Cookie 同步 |
+| Navigator | subagent | 浏览器/会话专家 | Chrome 管理、登录、会话判活、认证恢复、站点测绘、当前账号有权限证据回填、Cookie 同步 |
 | Form | subagent | 复杂业务表单专家 | 复杂业务表单填写与提交流程 |
-| Security | subagent | Replay 测试专家 | IDOR、注入、重放编排、`AUTH_CONTEXT_STALE`、CSRF 续链 |
+| Security | subagent | Replay 测试专家 | IDOR、注入、当前账号 denied backlog 重放、`AUTH_CONTEXT_STALE`、CSRF 续链 |
 | Analyzer | subagent | 结果分析专家 | 稳定 replay 分析、漏洞判定、严重性评级 |
 | AccountParser | subagent | 账号解析专家 | 解析账号文档、提取角色与权限 |
 
@@ -82,7 +82,8 @@ Coordinator 负责决策与调度，subagent 负责具体执行。
 #### Navigator
 - 统一负责首次登录、会话判活、会话恢复与认证刷新；
 - 负责将浏览器 auth context 同步到 BurpBridge；
-- 认证恢复后负责回到原始导航上下文。
+- 认证恢复后负责回到原始导航上下文；
+- 只负责当前账号“有权限”的页面、接口与操作取证，不负责负向 replay。
 
 #### Form
 - 只处理复杂业务表单；
@@ -93,6 +94,7 @@ Coordinator 负责决策与调度，subagent 负责具体执行。
 - 负责 replay 驱动测试；
 - 负责识别 `AUTH_CONTEXT_STALE`；
 - 负责识别 `CSRF_TOKEN_STALE` 并在 Security 内部完成续链；
+- 默认消费 `permission_targets` 中“前序账号已确认有权限、且当前账号应无权限”的 denied backlog；
 - 不直接操作浏览器。
 
 #### Analyzer
@@ -152,15 +154,16 @@ Coordinator 负责决策与调度，subagent 负责具体执行。
 1. 如需账号解析，先执行 `@account_parser`
 2. `@security init_security`
 3. Coordinator 基于账号、角色与权限矩阵生成 `result/permission_targets.json`
-4. 按权限点价值选择当前轮次角色，并仅为该角色执行：
+4. 按权限点价值选择当前账号/角色轮次，并仅为该账号执行：
    - `@navigator create_instance`
    - `@navigator login_or_resume`
    - `@navigator sync_cookies`
 5. `@navigator survey/explore/verify_role_access`
 6. `@security test`
 7. 仅在 replay 稳定后调度 `@analyzer`
-8. 常规权限点完成后，再处理：
-   - deferred 权限点补测
+8. Coordinator 整理本轮未完成的 `permission_key + role/account`
+9. 常规账号轮次完成后，再处理：
+   - deferred / 补轮次权限点
    - intercept-first 的不可逆专项
 
 ### 复杂表单路径
@@ -208,13 +211,22 @@ Coordinator 负责决策与调度，subagent 负责具体执行。
 
 - 默认不再预登录全部账号，也不以“当前已登录账号集合”推进测试。
 - Coordinator 必须以 `permission_key` 作为默认调度单位，而不是以账号顺序作为默认主索引。
+- 每个账号轮次都必须包含两个连续子阶段：
+  - `@navigator` 负责当前账号有权限取证
+  - `@security` 负责当前账号 denied backlog replay
+- 在当前账号的 Security 子阶段结束前，不得切到下一个账号的 Navigator。
+- 不允许“所有账号先跑 Navigator，最后统一跑 Security”。
 - 每个权限点应聚合：
   - 允许角色/账号
   - 禁止角色
   - 关联页面与接口
   - 已测试角色
   - deferred 角色及原因
+- Navigator 回填单位始终是 `permission_key`，而不是账号记录；一个 `permission_key` 下可以挂多个操作样本。
+- 第一轮首个账号也必须进入 Security 子阶段；若 denied backlog 为空，则返回 `success/no_targets`，但轮次仍算完整执行。
+- 第一轮中每个账号只处理“自己 + 前序账号”已经形成证据链的权限点，不预支后续账号尚未探索出的 denied 测试。
 - 若某角色可立即用于 replay，则应立即验证；若目标角色缺少有效 auth snapshot，则记录为 deferred，不强制反复重登。
+- 每轮结束后都要整理未完成的 `permission_key + role/account`，后续补轮次仍按“登录一个账号 -> Navigator 取证 -> Security replay”执行。
 - 删除、审批通过、撤销、终止等不可逆动作应标记为最终专项，统一在最后处理。
 
 ### Coordinator 审视规则
@@ -293,6 +305,7 @@ Navigator 维护以下运行时会话字段：
 - `session_name`
 - `account_id`
 - `role`
+- `current_round_stage`
 - `last_auth_check_at`
 - `auth_context.headers`
 - `auth_context.cookies`
@@ -305,6 +318,9 @@ Navigator 维护以下运行时会话字段：
 - `resume_context.task_type`
 - `resume_context.resume_target_url`
 - `resume_context.pending_urls`
+- `permission_context.pending_role_permission_pairs`
+- `permission_context.negative_backlog_count`
+- `permission_context.security_skip_reason`
 
 Security 可以把它当作 BurpBridge auth context 的本地镜像。  
 Security 在刷新 CSRF header 时，必须先本地合并，再整份回写。

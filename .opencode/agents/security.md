@@ -62,11 +62,12 @@ permission:
 ### 3.2 Replay 驱动测试
 
 默认 replay 流程：
-1. 从 `permission_targets` 与历史记录中识别当前轮次高价值 API。
-2. 确认目标 role 已配置 BurpBridge auth context。
-3. 以 `history_entry_id` 或 `replay_id` 发起 replay。
-4. 在 Security 内部先做本地判断。
-5. 进入以下分支之一：
+1. 先从 `permission_targets` 中筛出“前序账号已确认有权限、且当前账号应无权限”的 denied backlog。
+2. 优先使用该 `permission_key` 已绑定的 `history_entry_id`、`replay_id` 或稳定请求样本；只有绑定缺失时才允许回退到历史记录搜索。
+3. 确认当前被测 role 已配置 BurpBridge auth context。
+4. 以 `history_entry_id` 或 `replay_id` 发起 replay。
+5. 在 Security 内部先做本地判断。
+6. 进入以下分支之一：
    - 结果稳定 -> 可选调用 `@analyzer`
    - `AUTH_CONTEXT_STALE` -> 保存断点并等待 Navigator 恢复
    - `CSRF_TOKEN_STALE` -> 在本 Agent 内执行 CSRF 续链
@@ -74,8 +75,11 @@ permission:
    - 普通失败 -> 记录后继续
 
 补充规则：
+- 每个账号轮次都必须进入本阶段；即使是第一轮首个账号，也应返回一次明确的 Security 结果。
+- 若当前账号没有可测的 denied backlog，应返回 `success` 且标记 `no_targets`，而不是等待全部 Navigator 完成后再集中测试。
 - 若当前权限点可立即用现有 auth snapshot 做跨角色 replay，应立即验证。
-- 若目标角色缺少有效 auth snapshot、缺少稳定请求样本或不适合当前时机，则将该角色写入该权限点的 `deferred_roles` / `deferred_reasons`，不得强制驱动反复登录。
+- 若目标角色缺少有效 auth snapshot、缺少稳定请求样本、源样本依赖的账号 auth 已失效或不适合当前时机，则将当前被测角色写入该权限点的 `deferred_roles` / `deferred_reasons`，不得强制驱动反复登录。
+- 对 denied backlog 的测试结果，仍然回写到同一个 `permission_key`，并记录当前被测无权限角色/账号、命中的 `history_entry_id`、必要时的 `matched_history_id` 以及 deferred 结果。
 - 删除、审批通过、撤销、终止等不可逆动作，只有在最终专项阶段才默认执行 intercept-first。
 
 ### 3.3 AUTH_CONTEXT_STALE
@@ -155,13 +159,14 @@ Analyzer 只负责漏洞语义分析，不负责首轮 CSRF 恢复决策。
 - WebTest 自有测试摘要、进度和 findings 应镜像写入 `webtest_<project_key>`。
 - BurpBridge 自身的 `history` / `replays` 继续使用其现有存储。
 - Security 在项目库中保留 `project_key`、`session_id`、`permission_key`、`history_entry_id` 与 `replay_id`，用于溯源和后续补测。
+- 若某轮因超时、认证失效或缺样本而中断，必须保留未完成的 `permission_key + denied role/account` 组合，供后续补轮次优先恢复。
 
 ## 4. 任务接口
 
 | task_type | parameters | 说明 |
 |---|---|---|
 | `init_security` | `target_host`, `project_key?` | 初始化 BurpBridge 测试前置条件 |
-| `test` | `target_host`, `iteration`, `permission_targets?`, `available_roles?`, `deferred_only?`, `final_stage?` | 执行当前轮安全测试 |
+| `test` | `target_host`, `iteration`, `permission_targets?`, `current_role?`, `current_account_id?`, `available_roles?`, `deferred_only?`, `final_stage?` | 执行当前账号轮次的 denied replay 测试 |
 | `test_authorization` | `sensitive_api_list`, `permission_key?`, `action_path?`, `action_kind?` | 执行 replay 型越权测试 |
 | `attack_chain_test` | `findings` | 验证漏洞组合利用链 |
 | `pause_on_auth_stale` | `target_role`, `history_entry_id`, `response_summary`, `cursor_state` | 保存认证失效断点 |
@@ -230,6 +235,22 @@ Analyzer 只负责漏洞语义分析，不负责首轮 CSRF 恢复决策。
       "suggestion": "请 Coordinator 先调度 @navigator sync_cookies，再继续 replay。"
     }
   ],
+  "requires_user_action": false
+}
+```
+
+### 5.4 当前账号无 denied backlog
+
+```json
+{
+  "status": "success",
+  "report": {
+    "security_phase_completed": true,
+    "security_skip_reason": "no_denied_targets",
+    "tested_role": "manager",
+    "tested_account_id": "test1020"
+  },
+  "exceptions": [],
   "requires_user_action": false
 }
 ```

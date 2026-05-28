@@ -1,11 +1,11 @@
 ---
 name: test-rounds
-description: "测试轮次模型，适配串行流程。定义探索和测试的迭代机制。"
+description: "测试轮次模型，适配按账号双阶段权限轮次。定义当前账号先导航取证、再做 denied replay 的迭代机制。"
 ---
 
 # Test Rounds Skill
 
-> 测试轮次模型 — 以权限点为中心的串行执行与迭代控制
+> 测试轮次模型 — 以权限点为中心、按账号双阶段执行与补轮次控制
 
 ---
 
@@ -21,31 +21,31 @@ description: "测试轮次模型，适配串行流程。定义探索和测试的
 
 ## 迭代模型
 
-### 迭代N: 选择权限点 → 当前角色探索 → replay测试 → 评估
+### 迭代N: 选择账号与权限重点 → 当前账号取证 → 当前账号 denied replay → 评估
 
 ```
 迭代N流程:
 ┌─────────────────────────────────────────────────────────────┐
-│  1. Coordinator选择当前轮次 permission_key                    │
+│  1. Coordinator选择当前账号与权限重点                         │
 │     - 结合权限矩阵、已测状态、风险优先级                      │
-│     - 只挑选一个最有价值的角色进入本轮                        │
+│     - 只挑选一个账号/角色进入本轮                             │
 │     - 不预登录全部账号                                        │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │  2. @navigator survey/explore                                │
-│     - 围绕 permission_key 收集页面、入口与接口证据            │
-│     - 发现API并回填 permission_targets                        │
-│     - 可达性与角色差异验证                                    │
+│     - 只访问当前账号有权限的页面、接口与操作                  │
+│     - 围绕 permission_key 回填正向证据                        │
+│     - 明确哪些 permission_key 可交给本轮 Security             │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │  3. @security test                                           │
-│     - 对当前 permission_key 做正向/反向 replay                │
-│     - 有可用 auth 就立即跨角色验证                            │
-│     - 无可用 auth 就记入 deferred_roles                       │
+│     - 只测试“前面已探索过，且当前账号应无权限”的 backlog      │
+│     - 优先直接使用 permission_key 绑定的 history_entry_id     │
+│     - 无可用 auth 或样本不足就记入 deferred_roles             │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ↓
@@ -58,8 +58,8 @@ description: "测试轮次模型，适配串行流程。定义探索和测试的
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │  5. Coordinator评估                                          │
-│     - 查看 permission_targets 的闭环率                        │
-│     - 决定继续权限轮次、进入 deferred/final stage 或报告      │
+│     - 整理本轮未完成的 permission_key + role/account          │
+│     - 决定继续下一账号轮次、进入补轮次、final stage 或报告    │
 │     - duration: ~30sec                                      │
 └─────────────────────────────────────────────────────────────┘
                               │
@@ -70,16 +70,16 @@ description: "测试轮次模型，适配串行流程。定义探索和测试的
 
 ---
 
-## 权限轮次阶段（Navigator）
+## 账号轮次阶段（Navigator）
 
 ### 目标
 
 ```
-max(权限闭环率)
-- 优先闭环高价值 permission_key
+max(当前账号正向证据质量)
+- 优先补齐当前账号有权限的高价值 permission_key
 - 为当前权限点补齐页面、接口和请求样本
-- 验证当前角色有权限点与邻近无权限点
-- 记录表单、异常与 deferred 原因
+- 记录 `allowed_roles / allowed_accounts / denied_roles`
+- 产出本轮可交给 Security 的 denied backlog 候选
 ```
 
 ### Navigator任务参数
@@ -90,6 +90,7 @@ max(权限闭环率)
   "parameters": {
     "permission_key": "workflow.approval.submit",
     "round_role": "manager",
+    "round_account_id": "test1020",
     "max_pages": 10,
     "max_depth": 3,
     "iteration": 1
@@ -101,21 +102,21 @@ max(权限闭环率)
 
 | status | Coordinator处理 |
 |--------|----------------|
-| completed | 正常进入测试 |
+| completed | 必须进入同一账号的 Security 子阶段 |
 | partial | 检查原因，判断继续或测试 |
 | exception | 处理异常，可能暂停 |
 
 ---
 
-## 安全测试阶段（Security + Analyzer）
+## 当前账号安全阶段（Security + Analyzer）
 
 ### 目标
 
 ```
-max(权限验证深度)
-- 对当前权限点关联接口进行测试
-- 立即利用现有 auth 做跨角色越权验证
-- 将无法立即验证的角色记入 deferred
+max(当前账号 denied replay 覆盖)
+- 只测试前序账号已确认有权限、且当前账号应无权限的接口
+- 优先直接利用 permission_key 已绑定的历史样本
+- 将无法立即验证的 denied role/account 记入 deferred
 - 验证漏洞真实性
 ```
 
@@ -128,6 +129,7 @@ max(权限验证深度)
     "target_host": "edu.hicomputing.huawei.com",
     "permission_key": "workflow.approval.submit",
     "round_role": "manager",
+    "round_account_id": "test1020",
     "iteration": 1
   }
 }
@@ -136,18 +138,30 @@ max(权限验证深度)
 ### 增量规则
 
 ```
-每个迭代只测试上一轮未闭环的权限点或其关联API：
+每个账号轮次都要执行完 navigator + security 两个子阶段，之后才允许切到下一个账号：
 
 ✗ 禁止重复测试
   - 跳过状态已 `closed` 的权限点
   - 跳过已稳定确认的关联API（除非需要深度验证）
+  - 禁止“所有账号先跑 Navigator，最后统一跑 Security”
   
 ✓ 只测试缺口
-  - pending / deferred 状态的权限点
+  - 前序账号已确认有权限、且当前账号应无权限的权限点
+  - 当前账号本轮只对“自己 + 前序账号”已经形成证据链的权限点负责，不预支后续账号的 denied 测试
+  - 当前账号轮次中断后未完成的 `permission_key + role/account`
   - discovered 但未绑定充分证据的敏感API
   - Navigator 新发现且能关联到当前权限点的 API
-  - 主扫描从 `history_progress[permission_key+role]` 恢复
+  - 主扫描从 `history_progress[permission_key+target_role]` 恢复
   - 高危接口可触发独立 reverse probe，但不得修改主扫描游标
+
+✓ 第一轮特例
+  - 首个账号也必须进入 Security 子阶段
+  - 若 denied backlog 为空，返回 `success/no_targets`
+
+✓ 补轮次规则
+  - 每轮结束后整理未闭环的 `permission_key + role/account`
+  - 后续补轮次仍按“登录一个账号 → Navigator 取证 → Security denied replay”执行
+  - 若中途因超时、失效或缺样本中断，恢复时优先继续原轮次未完成项
 ```
 
 ---
@@ -164,19 +178,21 @@ Q1: 有高价值 survey 缺口或权限证据缺口吗？
     判定:
     - 有缺口 → YES → 继续探索
 
-Q2: 关键权限点是否都闭环了？
+Q2: 当前账号轮次是否真正闭环了？
     检查:
-    - permission_targets.status
-    - 高优先级权限点覆盖率
+    - 当前账号的 navigator phase 是否完成
+    - 当前账号的 security phase 是否完成或合法 no_targets
+    - 本轮是否仍有未完成的 permission_key + role/account
     判定:
-    - 闭环率 < 80% → NO → 继续测试
+    - 任一未完成 → NO → 优先继续本账号轮次
 
-Q3: 是否还有 deferred 或最终专项？
+Q3: 是否还有 deferred、补轮次或最终专项？
     检查:
     - deferred_roles 是否非空
+    - 未完成补轮次队列是否非空
     - final_stage_required 是否存在
     判定:
-    - YES → 进入最终专项阶段
+    - YES → 进入补轮次或最终专项阶段
 
 Q4: 漏洞是否需要组合验证？
     检查:
@@ -222,6 +238,15 @@ function shouldContinueIteration(iteration, mode) {
     return { continue: false, reason: "达到轮次上限" };
   }
   
+  // 当前账号双阶段必须先闭环
+  if (currentRound.navigator_phase !== "completed") {
+    return { continue: true, action: "@navigator survey_site|deep_explore_module|verify_role_access" };
+  }
+
+  if (!["completed", "no_targets"].includes(currentRound.security_phase)) {
+    return { continue: true, action: "@security test" };
+  }
+
   // 三问法则判定
   const q1 = checkQ1();
   const q2 = checkQ2();
@@ -238,7 +263,7 @@ function shouldContinueIteration(iteration, mode) {
   }
   
   if (q3.answer === "YES") {
-    return { continue: true, action: "FINAL_STAGE" };
+    return { continue: true, action: "deferred_round|FINAL_STAGE" };
   }
   
   if (q4.answer === "YES") {

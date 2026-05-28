@@ -77,8 +77,12 @@ database_name = "webtest_" + normalize(project_key)
   mode: "standard",                     // quick/standard/deep
   status: "running",                    // running/completed/failed/paused
   current_state: "SITE_SURVEY",         // 状态机当前状态
+  current_account_id: "test1020",
   current_role: "manager",
   current_permission_key: "workflow.approval.submit",
+  current_round_stage: "navigator_phase",
+  current_round_backlog_count: 0,
+  pending_role_permission_pairs: [],
   created_at: Date,
   updated_at: Date,
   config: {
@@ -104,9 +108,14 @@ database_name = "webtest_" + normalize(project_key)
   session_id: "session_20260422",
   run_id: "run_20260519_001",
   target_host: "www.example.com",
-  round_type: "permission_round|deferred_round|final_stage",
+  round_type: "account_round|deferred_round|final_stage",
   role: "manager",
+  account_id: "test1020",
   permission_key: "workflow.approval.submit",
+  navigator_phase_status: "pending|completed",
+  security_phase_status: "pending|completed|no_targets|deferred",
+  security_skip_reason: null,
+  negative_backlog_count: 0,
   status: "running|completed|deferred",
   started_at: Date,
   finished_at: Date
@@ -161,11 +170,25 @@ database_name = "webtest_" + normalize(project_key)
     {
       history_entry_id: "65f1a2b3c4d5e6f7a8b9c0d1",
       source_role: "manager",
+      source_account_id: "test1020",
+      action_kind: "approve",
       request_fingerprint: "POST:/api/workflow/submit"
     }
   ],
   tested_roles: [
     { role: "manager", status: "allowed_confirmed", last_tested_at: Date }
+  ],
+  denied_test_results: [
+    {
+      role: "employee",
+      account_id: "test2040",
+      source_role: "manager",
+      action_kind: "approve",
+      used_history_entry_id: "65f1a2b3c4d5e6f7a8b9c0d1",
+      matched_history_id: null,
+      result: "blocked|allowed|deferred",
+      tested_at: Date
+    }
   ],
   untested_roles: ["employee", "guest"],
   deferred_roles: [
@@ -184,8 +207,13 @@ database_name = "webtest_" + normalize(project_key)
 ```
 
 规则补充：
+- `permission_key` 是唯一记录中心；即使同一权限点由多个账号探索或测试，也不能拆成多条账号主记录。
+- 一个 `permission_key` 下允许挂多个操作样本，必须通过 `action_kind` 或等价字段区分 `view/create/update/delete/approve/revoke`。
+- Navigator 负责写入正向证据：`allowed_roles`、`allowed_accounts`、`denied_roles`、`related_apis` 与 `confirmed_request_samples.history_entry_id`。
+- Security 负责把 denied replay 结果写回同一 `permission_key`，包括当前被测 denied role/account、命中的历史样本与 deferred 结果。
 - 当某权限点存在稳定可复测的真实请求样本时，必须至少保留一个真实 `history_entry_id` 或等价请求指纹，不能只保留接口 URL。
 - 对不可逆动作，额外记录 `matched_history_id` 并与来源 `permission_key` 绑定。
+- denied replay 必须优先消费 `permission_key` 中已绑定的 `history_entry_id`；只有绑定缺失时才允许回退到 history 搜索。
 
 ### findings
 
