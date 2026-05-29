@@ -107,7 +107,7 @@
 - Security 在刷新 CSRF header 时，必须先本地合并，再整份回写。
 - 不允许在 snapshot 不完整时直接覆盖 BurpBridge auth context。
 - `permission_context` 用于记录当前会话正在服务的权限点，以及哪些权限点被延期到后续轮次。
-- `history_progress` 应支持按 `permission_key + role` 记录 replay 光标，而不是只保留单一全局扫描位置。
+- `history_progress` 应支持按 `permission_key + sample_id + target_account_id` 记录 replay 光标，而不是只保留单一全局扫描位置。
 
 ### 会话状态定义
 
@@ -180,15 +180,56 @@
       "confirmed": true
     }
   ],
+  "api_evidence_samples": [
+    {
+      "sample_id": "sample_workflow_submit_001",
+      "permission_key": "workflow.approval.submit",
+      "api_id": "api_001",
+      "method": "POST",
+      "url": "/api/workflow/submit",
+      "request_fingerprint": "POST:/api/workflow/submit",
+      "source_account_id": "test1020",
+      "source_roles": ["manager"],
+      "expected_access": "allowed",
+      "observed_access": "allowed",
+      "discovered_by": "navigator",
+      "history_entry_id": "65f1a2b3c4d5e6f7a8b9c0d1",
+      "history_bound_by": "security",
+      "history_bound_at": "2026-05-19T10:00:00Z",
+      "replay_ready": true,
+      "action_kind": "approve"
+    }
+  ],
   "evidence_history_ids": ["65f1a2b3c4d5e6f7a8b9c0d1"],
   "matched_history_ids": [],
   "confirmed_request_samples": [
     {
+      "sample_id": "sample_workflow_submit_001",
       "history_entry_id": "65f1a2b3c4d5e6f7a8b9c0d1",
+      "source_account_id": "test1020",
       "source_role": "manager",
       "request_fingerprint": "POST:/api/workflow/submit"
     }
   ],
+  "replay_matrix": {
+    "workflow.approval.submit|sample_workflow_submit_001|test2040": {
+      "permission_key": "workflow.approval.submit",
+      "sample_id": "sample_workflow_submit_001",
+      "source_account_id": "test1020",
+      "target_account_id": "test2040",
+      "expected_access": "denied",
+      "status": "pending",
+      "history_entry_id": "65f1a2b3c4d5e6f7a8b9c0d1",
+      "replay_id": null
+    }
+  },
+  "coverage_status": {
+    "allowed_evidence_done": true,
+    "history_binding_done": true,
+    "denied_replay_done": false,
+    "reverse_round_needed": true,
+    "closed_reason": null
+  },
   "tested_roles": [
     {
       "role": "manager",
@@ -216,8 +257,10 @@
 - `permission_targets.json` 是 Coordinator 的默认调度中心，优先级高于“当前已登录账号列表”。
 - `allowed_accounts` 应由权限矩阵中的角色与 `accounts.json` 自动映射得到，而不是靠手工维护。
 - `entry_points`、`access_steps` 与 `ui_locations` 用于保存可复现的最小导航信息，便于后续快速回到该权限点。
-- `related_apis` 与 `evidence_history_ids` 用于快速复测、延期补测和最终溯源。
-- 当权限点已具备稳定请求样本时，至少保留一个真实 `history_entry_id` 或等价请求指纹，不能只保留接口 URL。
+- `related_apis` 是轻量 API 列表；跨账号 replay 的主索引必须是 `api_evidence_samples`。
+- Navigator 负责创建 `api_evidence_samples`；若不能确定 `history_entry_id`，必须保留可匹配的 `request_fingerprint`、方法、URL、source account 与操作上下文。
+- Security 负责将样本绑定到 Burp `history_entry_id`，并把 `replay_ready=true` 的样本投影到 `confirmed_request_samples` 兼容字段。
+- `replay_matrix` 按 `permission_key + sample_id + target_account_id` 记录 denied replay 状态，避免后续账号重新全局扫描 history。
 - 对不可逆动作，额外记录 `matched_history_id` 并保持与来源 `permission_key` 绑定。
 - 对删除、审批通过、撤销、终止等不可逆动作，应标记 `final_stage_required=true`，并在最终专项阶段统一处理。
 

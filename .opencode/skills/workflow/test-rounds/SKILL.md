@@ -43,8 +43,9 @@ description: "测试轮次模型，适配按账号双阶段权限轮次。定义
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │  3. @security test                                           │
-│     - 只测试“前面已探索过，且当前账号应无权限”的 backlog      │
-│     - 优先直接使用 permission_key 绑定的 history_entry_id     │
+│     - 先绑定当前账号 Navigator 新增样本的 history_entry_id    │
+│     - 再测试“前面已探索过，且当前账号应无权限”的样本 backlog  │
+│     - 优先直接使用 permission_key + sample_id + history_id    │
 │     - 无可用 auth 或样本不足就记入 deferred_roles             │
 └─────────────────────────────────────────────────────────────┘
                               │
@@ -58,7 +59,7 @@ description: "测试轮次模型，适配按账号双阶段权限轮次。定义
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │  5. Coordinator评估                                          │
-│     - 整理本轮未完成的 permission_key + role/account          │
+│     - 整理未完成的 permission_key + sample_id + target_account│
 │     - 决定继续下一账号轮次、进入补轮次、final stage 或报告    │
 │     - duration: ~30sec                                      │
 └─────────────────────────────────────────────────────────────┘
@@ -77,7 +78,7 @@ description: "测试轮次模型，适配按账号双阶段权限轮次。定义
 ```
 max(当前账号正向证据质量)
 - 优先补齐当前账号有权限的高价值 permission_key
-- 为当前权限点补齐页面、接口和请求样本
+- 为当前权限点补齐页面、接口和 `api_evidence_samples`
 - 记录 `allowed_roles / allowed_accounts / denied_roles`
 - 产出本轮可交给 Security 的 denied backlog 候选
 ```
@@ -115,7 +116,9 @@ max(当前账号正向证据质量)
 ```
 max(当前账号 denied replay 覆盖)
 - 只测试前序账号已确认有权限、且当前账号应无权限的接口
-- 优先直接利用 permission_key 已绑定的历史样本
+- 当前账号 Security 子阶段先执行 history 样本绑定，再执行 denied replay
+- 优先直接利用 `api_evidence_samples.replay_ready=true` 且已绑定的历史样本
+- 以 `permission_key + sample_id + target_account_id` 作为 replay 与恢复主键
 - 将无法立即验证的 denied role/account 记入 deferred
 - 验证漏洞真实性
 ```
@@ -128,6 +131,7 @@ max(当前账号 denied replay 覆盖)
   "parameters": {
     "target_host": "edu.hicomputing.huawei.com",
     "permission_key": "workflow.approval.submit",
+    "sample_ids": ["sample_workflow_submit_001"],
     "round_role": "manager",
     "round_account_id": "test1020",
     "iteration": 1
@@ -148,10 +152,10 @@ max(当前账号 denied replay 覆盖)
 ✓ 只测试缺口
   - 前序账号已确认有权限、且当前账号应无权限的权限点
   - 当前账号本轮只对“自己 + 前序账号”已经形成证据链的权限点负责，不预支后续账号的 denied 测试
-  - 当前账号轮次中断后未完成的 `permission_key + role/account`
+  - 当前账号轮次中断后未完成的 `permission_key + sample_id + target_account_id`
   - discovered 但未绑定充分证据的敏感API
   - Navigator 新发现且能关联到当前权限点的 API
-  - 主扫描从 `history_progress[permission_key+target_role]` 恢复
+  - 主扫描从 `history_progress[permission_key+sample_id+target_account_id]` 恢复
   - 高危接口可触发独立 reverse probe，但不得修改主扫描游标
 
 ✓ 第一轮特例
@@ -159,9 +163,10 @@ max(当前账号 denied replay 覆盖)
   - 若 denied backlog 为空，返回 `success/no_targets`
 
 ✓ 补轮次规则
-  - 每轮结束后整理未闭环的 `permission_key + role/account`
+  - 每轮结束后整理未闭环的 `permission_key + sample_id + target_account_id`
   - 后续补轮次仍按“登录一个账号 → Navigator 取证 → Security denied replay”执行
   - 若中途因超时、失效或缺样本中断，恢复时优先继续原轮次未完成项
+  - 对后续账号新发现且当前账号应无权限的 ready 样本，生成第二轮或第三轮反向补测
 ```
 
 ---
@@ -182,7 +187,7 @@ Q2: 当前账号轮次是否真正闭环了？
     检查:
     - 当前账号的 navigator phase 是否完成
     - 当前账号的 security phase 是否完成或合法 no_targets
-    - 本轮是否仍有未完成的 permission_key + role/account
+    - 本轮是否仍有未完成的 permission_key + sample_id + target_account_id
     判定:
     - 任一未完成 → NO → 优先继续本账号轮次
 

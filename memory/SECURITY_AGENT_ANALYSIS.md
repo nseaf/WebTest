@@ -268,7 +268,7 @@ Security Agent 可配置自动同步，减少轮询开销：
 
 ### 6. 敏感 API 自动识别
 
-增强 Scout Agent 的 API 发现能力：
+增强 Navigator 的 API 发现与 `api_evidence_samples` 回填能力：
 
 ```json
 {

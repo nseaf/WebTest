@@ -12,7 +12,7 @@ description: "访问跟踪与进度控制，按账号双阶段轮次记录 Navig
 1. 模块 / 子模块自动归类
 2. 当前账号 `navigator phase` / `security phase` 双阶段状态跟踪
 3. 角色覆盖与可达性跟踪
-4. 未完成 `permission_key + role/account` 驱动的下一轮决策
+4. 未完成 `permission_key + sample_id + target_account_id` 驱动的下一轮决策
 
 ## API 模块划分
 
@@ -54,6 +54,8 @@ security_status: pending|in_progress|completed|blocked
     permission_key: "workflow.approval.submit",
     navigator_phase: "completed",
     security_phase: "pending",
+    history_binding_phase: "pending",
+    updated_sample_ids: ["sample_workflow_submit_001"],
     negative_backlog_count: 1,
     security_skip_reason: null
   },
@@ -101,7 +103,12 @@ security_status: pending|in_progress|completed|blocked
           api_id: "api_001",
           endpoint: "/api/workflow/tasks",
           method: "GET",
-          test_status: "pending"
+          test_status: "pending",
+          permission_keys: ["workflow.approval.submit"],
+          sample_ids: ["sample_workflow_submit_001"],
+          history_entry_ids: ["65f1a2b3c4d5e6f7a8b9c0d1"],
+          source_accounts: ["test1020"],
+          source_roles: ["manager"]
         }
       ],
       coverage_gaps: [
@@ -134,13 +141,37 @@ security_status: pending|in_progress|completed|blocked
       reason: "AUTH_CONTEXT_STALE"
     }
   ],
+  pending_sample_replay_pairs: [
+    {
+      permission_key: "workflow.approval.submit",
+      sample_id: "sample_workflow_submit_001",
+      source_account_id: "test1020",
+      target_account_id: "test2040",
+      target_roles: ["employee"],
+      pending_stage: "security_phase",
+      reason: "AUTH_CONTEXT_STALE"
+    }
+  ],
+  replay_matrix: {
+    "workflow.approval.submit|sample_workflow_submit_001|test2040": {
+      permission_key: "workflow.approval.submit",
+      sample_id: "sample_workflow_submit_001",
+      source_account_id: "test1020",
+      target_account_id: "test2040",
+      expected_access: "denied",
+      status: "pending",
+      history_entry_id: "65f1a2b3c4d5e6f7a8b9c0d1",
+      replay_id: null,
+      last_error: null
+    }
+  },
   sensitive_apis: {
     total: 5,
     tested: 2,
     untested: ["api_003", "api_004", "api_005"]
   },
   history_progress: {
-    "workflow.approval.submit|employee": {
+    "workflow.approval.submit|sample_workflow_submit_001|test2040": {
       main_scan: {
         current_page: 3,
         last_processed_timestamp_ms: 1714090000000,
@@ -172,9 +203,11 @@ security_status: pending|in_progress|completed|blocked
 ## 进度判定重点
 
 - 每个账号轮次都必须显式记录 `navigator phase` 与 `security phase`，不能只看全局 survey/exploration/security 状态。
+- 当前账号 Security 子阶段必须先记录 `history_binding_phase`，再记录 denied replay 的 `security_phase`。
 - 第一轮首个账号若没有 denied backlog，也必须把 `security phase` 记录为 `no_targets`，而不是缺失。
 - 第一轮中每个账号只需要处理“自己 + 前序账号”已经形成证据链的权限点，不能把后续账号尚未探索的权限点提前计入当前轮 backlog。
-- 每轮结束后必须整理未完成的 `permission_key + role/account`，作为后续补轮次输入。
+- 每轮结束后必须整理未完成的 `permission_key + sample_id + target_account_id`，作为后续补轮次输入。
+- Navigator 新增的接口样本先进入 `api_evidence_samples`；Security 绑定 `history_entry_id` 后才允许将该样本标记为 `replay_ready=true` 并生成跨账号 denied backlog。
 
 ## 历史扫描规则
 
@@ -182,7 +215,7 @@ security_status: pending|in_progress|completed|blocked
 - `reverse_probes` 只在高危接口或高风险模块触发时创建
 - reverse probe 的页码、命中记录和结束时间必须独立记录
 - reverse probe 不得覆盖 `main_scan.current_page` 或其 watermark
-- `history_progress` 的主键应能映射到 `permission_key + 当前被测 denied role`，避免同一 denied replay 被重复执行
+- `history_progress` 的主键应能映射到 `permission_key + sample_id + target_account_id`，避免同一接口样本对同一账号的 denied replay 被重复执行
 
 ### Survey
 
@@ -241,6 +274,8 @@ function checkExplorationNeeds(progress) {
 保留敏感 API 覆盖率和高优先级模块安全状态判定，同时补充：
 - 当前账号 `security phase` 是否已完成
 - `pending_role_permission_pairs` 是否仍存在
+- `pending_sample_replay_pairs` 是否仍存在
+- `replay_matrix` 中是否仍有当前切片的 `pending|deferred|blocked` 项
 - denied replay 是否已经写回对应 `permission_key`
 
 ## 加载要求

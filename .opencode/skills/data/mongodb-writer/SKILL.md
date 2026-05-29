@@ -164,10 +164,31 @@ database_name = "webtest_" + normalize(project_key)
   related_apis: [
     { api_id: "api_001", url: "/api/workflow/submit", method: "POST", confirmed: true }
   ],
+  api_evidence_samples: [
+    {
+      sample_id: "sample_workflow_submit_001",
+      permission_key: "workflow.approval.submit",
+      api_id: "api_001",
+      method: "POST",
+      url: "/api/workflow/submit",
+      request_fingerprint: "POST:/api/workflow/submit",
+      source_account_id: "test1020",
+      source_roles: ["manager"],
+      expected_access: "allowed",
+      observed_access: "allowed",
+      discovered_by: "navigator",
+      history_entry_id: "65f1a2b3c4d5e6f7a8b9c0d1",
+      history_bound_by: "security",
+      history_bound_at: Date,
+      replay_ready: true,
+      action_kind: "approve"
+    }
+  ],
   evidence_history_ids: ["65f1a2b3c4d5e6f7a8b9c0d1"],
   matched_history_ids: [],
   confirmed_request_samples: [
     {
+      sample_id: "sample_workflow_submit_001",
       history_entry_id: "65f1a2b3c4d5e6f7a8b9c0d1",
       source_role: "manager",
       source_account_id: "test1020",
@@ -178,18 +199,21 @@ database_name = "webtest_" + normalize(project_key)
   tested_roles: [
     { role: "manager", status: "allowed_confirmed", last_tested_at: Date }
   ],
-  denied_test_results: [
-    {
-      role: "employee",
-      account_id: "test2040",
-      source_role: "manager",
-      action_kind: "approve",
-      used_history_entry_id: "65f1a2b3c4d5e6f7a8b9c0d1",
+  replay_matrix: {
+    "workflow.approval.submit|sample_workflow_submit_001|test2040": {
+      permission_key: "workflow.approval.submit",
+      sample_id: "sample_workflow_submit_001",
+      source_account_id: "test1020",
+      target_account_id: "test2040",
+      target_roles: ["employee"],
+      expected_access: "denied",
+      status: "blocked|vulnerable|deferred|pending|not_applicable",
+      history_entry_id: "65f1a2b3c4d5e6f7a8b9c0d1",
+      replay_id: null,
       matched_history_id: null,
-      result: "blocked|allowed|deferred",
       tested_at: Date
     }
-  ],
+  },
   untested_roles: ["employee", "guest"],
   deferred_roles: [
     {
@@ -209,11 +233,12 @@ database_name = "webtest_" + normalize(project_key)
 规则补充：
 - `permission_key` 是唯一记录中心；即使同一权限点由多个账号探索或测试，也不能拆成多条账号主记录。
 - 一个 `permission_key` 下允许挂多个操作样本，必须通过 `action_kind` 或等价字段区分 `view/create/update/delete/approve/revoke`。
-- Navigator 负责写入正向证据：`allowed_roles`、`allowed_accounts`、`denied_roles`、`related_apis` 与 `confirmed_request_samples.history_entry_id`。
-- Security 负责把 denied replay 结果写回同一 `permission_key`，包括当前被测 denied role/account、命中的历史样本与 deferred 结果。
-- 当某权限点存在稳定可复测的真实请求样本时，必须至少保留一个真实 `history_entry_id` 或等价请求指纹，不能只保留接口 URL。
+- Navigator 负责写入正向证据：`allowed_roles`、`allowed_accounts`、`denied_roles`、`related_apis` 与 `api_evidence_samples`。
+- Security 负责将 `api_evidence_samples` 绑定或修正为稳定 `history_entry_id`，并把 ready 样本投影到 `confirmed_request_samples` 兼容字段。
+- Security 负责把 denied replay 结果写回同一 `permission_key` 的 `replay_matrix`，包括 `sample_id`、当前被测 denied role/account、命中的历史样本与 deferred 结果。
+- 当某权限点存在稳定可复测的真实请求样本时，必须至少在 `api_evidence_samples` 中保留一个真实 `history_entry_id` 或等价请求指纹，不能只保留接口 URL。
 - 对不可逆动作，额外记录 `matched_history_id` 并与来源 `permission_key` 绑定。
-- denied replay 必须优先消费 `permission_key` 中已绑定的 `history_entry_id`；只有绑定缺失时才允许回退到 history 搜索。
+- denied replay 必须优先消费 `api_evidence_samples[replay_ready=true]`；只有绑定缺失时才先执行 `bind_history_samples`。
 
 ### findings
 

@@ -55,7 +55,19 @@
     "auto_sync_last_repair_at": null,
     "auto_sync_owner": null
   },
-  "history_progress": {},
+  "history_progress": {
+    "workflow.approval.submit|sample_workflow_submit_001|test2040": {
+      "permission_key": "workflow.approval.submit",
+      "sample_id": "sample_workflow_submit_001",
+      "target_account_id": "test2040",
+      "target_role": "employee",
+      "main_scan": {
+        "last_processed_history_id": "65f1a2b3c4d5e6f7a8b9c0d1",
+        "last_replay_id": null,
+        "last_scan_at": null
+      }
+    }
+  },
   "session_schema": {
     "session_name": "Unique browser session key",
     "account_id": "Account ID from config/accounts.json",
@@ -88,7 +100,7 @@
     "permission_context.pending_permission_keys": "Permission targets that this live session can still help close",
     "permission_context.deferred_permission_keys": "Permission targets deferred because replay or auth conditions were not met",
     "permission_context.last_permission_round_at": "Last time this session was used in a permission-led round",
-    "history_progress": "Security replay cursor state, keyed by permission_key + role when applicable"
+    "history_progress": "Security replay cursor state, keyed by permission_key + sample_id + target_account_id when applicable"
   },
   "status_definitions": {
     "pending": "Waiting for login or attach",

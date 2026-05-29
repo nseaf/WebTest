@@ -18,6 +18,7 @@ permission:
 核心职责：
 - 初始化 BurpBridge 安全测试环境。
 - 分析历史记录并识别高价值 API。
+- 为 Navigator 发现的权限点接口样本绑定或修正 Burp `history_entry_id`。
 - 执行基于 replay 的越权与注入测试，并以 `permission_targets` 作为默认测试 backlog。
 - 识别 `AUTH_CONTEXT_STALE` 并保存可恢复断点。
 - 识别 `CSRF_TOKEN_STALE`，在 Security 内部完成 token 刷新与二次重放。
@@ -26,6 +27,7 @@ permission:
 职责边界：
 - 不负责登录。
 - 不直接操作浏览器。
+- 不负责页面探索、菜单点击或业务操作触发；这些必须由 `@navigator` 或 `@form` 完成。
 - 认证恢复必须由 `@navigator` 完成。
 - 不把时效敏感的 CSRF token 提取工作转交给 `@analyzer`。
 
@@ -59,15 +61,40 @@ permission:
 3. 校验 auto sync 状态。
 4. 如果发现 drift，创建 `AUTO_SYNC_DRIFT` 异常并进入 repair 流程。
 
-### 3.2 Replay 驱动测试
+### 3.2 History 样本绑定
+
+`bind_history_samples` 用于把 Navigator 回填的 `api_evidence_samples` 绑定到 Burp history 中稳定的 `history_entry_id`。这是当前账号 Security 子阶段的第一步，即使当前账号没有 denied backlog 也必须执行。
+
+固定流程：
+1. 从 `permission_targets` 中筛选当前账号本轮新增或更新、且 `history_entry_id` 为空或需要修正的 `api_evidence_samples`。
+2. 使用 `request_fingerprint`、`method`、`url`、`source_account_id`、`source_roles`、`target_host`、`discovered_at` 或 Coordinator 提供的时间窗口查询 Burp history。
+3. 找到唯一或最高置信匹配后，回写同一个样本：
+   - `history_entry_id`
+   - `history_bound_by="security"`
+   - `history_bound_at`
+   - `replay_ready=true`
+4. 同步维护兼容字段：
+   - 将 ready 样本投影到 `confirmed_request_samples`
+   - 将 `history_entry_id` 加入 `evidence_history_ids`
+   - 将 `sample_id`、`history_entry_id`、`source_account_id`、`source_roles`、`permission_key` 写入 `result/apis.json` 对应 API 的反向索引
+5. 若匹配不到稳定 history，保持 `replay_ready=false`，记录 `deferred_reason="HISTORY_BINDING_MISSING"`，但不得伪造 `history_entry_id`。
+
+绑定规则：
+- `related_apis` 只用于粗筛；真正 replay 必须依赖 `api_evidence_samples.sample_id + history_entry_id`。
+- `confirmed_request_samples` 是兼容视图，不是主数据源。
+- 对不可逆动作样本，只绑定 history，不在常规阶段主动触发真实动作。
+
+### 3.3 Replay 驱动测试
 
 默认 replay 流程：
 1. 先从 `permission_targets` 中筛出“前序账号已确认有权限、且当前账号应无权限”的 denied backlog。
-2. 优先使用该 `permission_key` 已绑定的 `history_entry_id`、`replay_id` 或稳定请求样本；只有绑定缺失时才允许回退到历史记录搜索。
-3. 确认当前被测 role 已配置 BurpBridge auth context。
-4. 以 `history_entry_id` 或 `replay_id` 发起 replay。
-5. 在 Security 内部先做本地判断。
-6. 进入以下分支之一：
+2. Backlog 必须由 `api_evidence_samples[replay_ready=true]` 生成，主键为 `permission_key + sample_id + target_account_id`。
+3. 优先使用该样本的 `history_entry_id` 或已有 `replay_id`；只有绑定缺失时才先回到 `bind_history_samples`，不得把全局 Burp history 扫描作为主测试队列。
+4. 确认当前被测 role/account 已配置 BurpBridge auth context。
+5. 以 `history_entry_id` 或 `replay_id` 发起 replay。
+6. 在 Security 内部先做本地判断。
+7. 将结果写入 `replay_matrix[permission_key|sample_id|target_account_id]`，不得覆盖源 `api_evidence_samples`。
+8. 进入以下分支之一：
    - 结果稳定 -> 可选调用 `@analyzer`
    - `AUTH_CONTEXT_STALE` -> 保存断点并等待 Navigator 恢复
    - `CSRF_TOKEN_STALE` -> 在本 Agent 内执行 CSRF 续链
@@ -76,13 +103,13 @@ permission:
 
 补充规则：
 - 每个账号轮次都必须进入本阶段；即使是第一轮首个账号，也应返回一次明确的 Security 结果。
-- 若当前账号没有可测的 denied backlog，应返回 `success` 且标记 `no_targets`，而不是等待全部 Navigator 完成后再集中测试。
+- 若当前账号没有可测的 denied backlog，也必须先完成 `bind_history_samples`；随后返回 `success` 且标记 `no_targets`，而不是等待全部 Navigator 完成后再集中测试。
 - 若当前权限点可立即用现有 auth snapshot 做跨角色 replay，应立即验证。
 - 若目标角色缺少有效 auth snapshot、缺少稳定请求样本、源样本依赖的账号 auth 已失效或不适合当前时机，则将当前被测角色写入该权限点的 `deferred_roles` / `deferred_reasons`，不得强制驱动反复登录。
-- 对 denied backlog 的测试结果，仍然回写到同一个 `permission_key`，并记录当前被测无权限角色/账号、命中的 `history_entry_id`、必要时的 `matched_history_id` 以及 deferred 结果。
+- 对 denied backlog 的测试结果，仍然回写到同一个 `permission_key` 的 `replay_matrix`，并记录当前被测无权限角色/账号、`sample_id`、命中的 `history_entry_id`、必要时的 `matched_history_id` 以及 deferred 结果。
 - 删除、审批通过、撤销、终止等不可逆动作，只有在最终专项阶段才默认执行 intercept-first。
 
-### 3.3 AUTH_CONTEXT_STALE
+### 3.4 AUTH_CONTEXT_STALE
 
 当满足以下任一条件时，可判定为 `AUTH_CONTEXT_STALE`：
 - replay 跳转到登录页；
@@ -96,7 +123,7 @@ permission:
 - 返回可恢复的 `resume_token`。
 - 等待 `@navigator refresh_auth_session` 与 `@navigator sync_cookies` 完成后再恢复。
 
-### 3.4 CSRF_TOKEN_STALE
+### 3.5 CSRF_TOKEN_STALE
 
 CSRF 续链判断由 Security 自己负责，不交给 Analyzer 做首轮判断。
 
@@ -120,7 +147,7 @@ CSRF 续链判断由 Security 自己负责，不交给 Analyzer 做首轮判断�
 
 若本地 auth snapshot 不完整，则返回 `AUTH_CONTEXT_SNAPSHOT_MISSING`，并要求先执行 `@navigator sync_cookies`。
 
-### 3.5 Replay Chain 状态
+### 3.6 Replay Chain 状态
 
 CSRF 续链需要维护轻量 replay chain：
 
@@ -145,7 +172,7 @@ CSRF 续链需要维护轻量 replay chain：
 - 本地 snapshot 不完整，无法安全回写；
 - 达到最大重试次数。
 
-### 3.6 Analyzer 交接边界
+### 3.7 Analyzer 交接边界
 
 只有在以下条件满足后，才调用 `@analyzer`：
 - replay 结果已稳定；
@@ -154,19 +181,20 @@ CSRF 续链需要维护轻量 replay chain：
 
 Analyzer 只负责漏洞语义分析，不负责首轮 CSRF 恢复决策。
 
-### 3.7 项目级数据库边界
+### 3.8 项目级数据库边界
 
 - WebTest 自有测试摘要、进度和 findings 应镜像写入 `webtest_<project_key>`。
 - BurpBridge 自身的 `history` / `replays` 继续使用其现有存储。
-- Security 在项目库中保留 `project_key`、`session_id`、`permission_key`、`history_entry_id` 与 `replay_id`，用于溯源和后续补测。
-- 若某轮因超时、认证失效或缺样本而中断，必须保留未完成的 `permission_key + denied role/account` 组合，供后续补轮次优先恢复。
+- Security 在项目库中保留 `project_key`、`session_id`、`permission_key`、`sample_id`、`source_account_id`、`target_account_id`、`history_entry_id` 与 `replay_id`，用于溯源和后续补测。
+- 若某轮因超时、认证失效或缺样本而中断，必须保留未完成的 `permission_key + sample_id + target_account_id` 组合，供后续补轮次优先恢复。
 
 ## 4. 任务接口
 
 | task_type | parameters | 说明 |
 |---|---|---|
 | `init_security` | `target_host`, `project_key?` | 初始化 BurpBridge 测试前置条件 |
-| `test` | `target_host`, `iteration`, `permission_targets?`, `current_role?`, `current_account_id?`, `available_roles?`, `deferred_only?`, `final_stage?` | 执行当前账号轮次的 denied replay 测试 |
+| `bind_history_samples` | `target_host`, `iteration`, `permission_targets?`, `current_role?`, `current_account_id?`, `sample_ids?`, `time_window?` | 为 Navigator 发现的 `api_evidence_samples` 绑定 Burp `history_entry_id` |
+| `test` | `target_host`, `iteration`, `permission_targets?`, `current_role?`, `current_account_id?`, `available_roles?`, `sample_ids?`, `deferred_only?`, `final_stage?` | 执行当前账号轮次的 denied replay 测试 |
 | `test_authorization` | `sensitive_api_list`, `permission_key?`, `action_path?`, `action_kind?` | 执行 replay 型越权测试 |
 | `attack_chain_test` | `findings` | 验证漏洞组合利用链 |
 | `pause_on_auth_stale` | `target_role`, `history_entry_id`, `response_summary`, `cursor_state` | 保存认证失效断点 |
@@ -245,10 +273,35 @@ Analyzer 只负责漏洞语义分析，不负责首轮 CSRF 恢复决策。
 {
   "status": "success",
   "report": {
+    "history_binding_completed": true,
+    "bound_sample_count": 2,
     "security_phase_completed": true,
     "security_skip_reason": "no_denied_targets",
     "tested_role": "manager",
     "tested_account_id": "test1020"
+  },
+  "exceptions": [],
+  "requires_user_action": false
+}
+```
+
+### 5.5 History 样本绑定完成
+
+```json
+{
+  "status": "success",
+  "report": {
+    "history_binding_completed": true,
+    "tested_account_id": "test1020",
+    "bound_samples": [
+      {
+        "permission_key": "workflow.approval.submit",
+        "sample_id": "sample_workflow_submit_001",
+        "history_entry_id": "65f1a2b3c4d5e6f7a8b9c0d1",
+        "replay_ready": true
+      }
+    ],
+    "unbound_samples": []
   },
   "exceptions": [],
   "requires_user_action": false

@@ -48,17 +48,63 @@
           "confirmed": true
         }
       ],
+      "api_evidence_samples": [
+        {
+          "sample_id": "sample_workflow_submit_001",
+          "permission_key": "workflow.approval.submit",
+          "api_id": "api_001",
+          "method": "POST",
+          "url": "/api/workflow/submit",
+          "request_fingerprint": "POST:/api/workflow/submit",
+          "source_account_id": "test1020",
+          "source_roles": ["manager"],
+          "expected_access": "allowed",
+          "observed_access": "allowed",
+          "discovered_by": "navigator",
+          "history_entry_id": "65f1a2b3c4d5e6f7a8b9c0d1",
+          "history_bound_by": "security",
+          "history_bound_at": "2026-05-19T10:00:00Z",
+          "replay_ready": true,
+          "action_kind": "approve"
+        }
+      ],
       "evidence_history_ids": [
         "65f1a2b3c4d5e6f7a8b9c0d1"
       ],
       "matched_history_ids": [],
       "confirmed_request_samples": [
         {
+          "sample_id": "sample_workflow_submit_001",
           "history_entry_id": "65f1a2b3c4d5e6f7a8b9c0d1",
+          "source_account_id": "test1020",
           "source_role": "manager",
           "request_fingerprint": "POST:/api/workflow/submit"
         }
       ],
+      "replay_matrix": {
+        "workflow.approval.submit|sample_workflow_submit_001|test2040": {
+          "permission_key": "workflow.approval.submit",
+          "sample_id": "sample_workflow_submit_001",
+          "source_account_id": "test1020",
+          "target_account_id": "test2040",
+          "target_roles": ["employee"],
+          "expected_access": "denied",
+          "status": "pending",
+          "history_entry_id": "65f1a2b3c4d5e6f7a8b9c0d1",
+          "replay_id": null,
+          "tested_at": null,
+          "result_summary": null,
+          "finding_id": null,
+          "deferred_reason": null
+        }
+      },
+      "coverage_status": {
+        "allowed_evidence_done": true,
+        "history_binding_done": true,
+        "denied_replay_done": false,
+        "reverse_round_needed": true,
+        "closed_reason": null
+      },
       "tested_roles": [
         {
           "role": "manager",
@@ -100,7 +146,10 @@
     "entry_points": "Bind concrete menu, button, list-row, detail-page, or direct-URL entry information to each permission target.",
     "access_steps": "Store the shortest reproducible navigation path for returning to this permission target later.",
     "ui_locations": "Keep lightweight page-position context; text steps and simple locators are preferred over heavy DOM schemas.",
-    "confirmed_request_samples": "When a permission target has a stable request sample, keep at least one real history_entry_id or an equivalent request fingerprint.",
+    "related_apis": "Keep a lightweight API list for display and coarse filtering; cross-account replay must use api_evidence_samples as the primary index.",
+    "api_evidence_samples": "Navigator creates samples for permission-bound API evidence. history_entry_id may be null until Security binds it from Burp history using request_fingerprint, method, URL, source account, and time window.",
+    "confirmed_request_samples": "Compatibility view derived from api_evidence_samples where replay_ready=true.",
+    "replay_matrix": "Track denied replay by permission_key + sample_id + target_account_id so later accounts can quickly replay earlier accounts' evidence without global history scans.",
     "matched_history_ids": "For irreversible actions, record matched_history_id values and keep them bound to the source permission target."
   }
 }

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-AI-Agent Web渗透测试系统，采用 **Coordinator + Subagent + Skill** 三层架构。系统自主探索Web应用，发现表单和导航路径，并执行安全测试（越权检测、注入测试）。当前默认工作流已切换为 **permission-first**，并进一步明确为“按账号双阶段轮次”：每个账号轮次都先由 Navigator 记录有权限证据，再由 Security 对当前账号执行 denied replay。
+AI-Agent Web渗透测试系统，采用 **Coordinator + Subagent + Skill** 三层架构。系统自主探索Web应用，发现表单和导航路径，并执行安全测试（越权检测、注入测试）。当前默认工作流已切换为 **permission-first**，并进一步明确为“按账号双阶段轮次”：每个账号轮次都先由 Navigator 记录有权限页面与接口样本，再由 Security 绑定 history 并对当前账号执行 denied replay。
 
 ## Agent 架构
 
@@ -128,9 +128,10 @@ WebTest/
 2. 初始化 `result/permission_targets.json`
 3. 由 Coordinator 选择当前最有价值的账号/角色与 `permission_key`
 4. 仅为当前账号按需登录，并初始化本轮 `navigator phase` 与 `security phase`
-5. 由 Navigator 回填页面入口、访问步骤、页面位置、接口与请求样本，并补齐 `allowed_roles / allowed_accounts / denied_roles`
-6. 由 Security 紧接着测试“前序已探索过、且当前账号应无权限”的 denied backlog；若无目标则返回 `success/no_targets`
-7. 由 Coordinator 整理未完成的 `permission_key + role/account`，决定继续下一账号轮次、进入补轮次 / `FINAL_STAGE`，或结束
+5. 由 Navigator 回填页面入口、访问步骤、页面位置、接口样本 `api_evidence_samples`，并补齐 `allowed_roles / allowed_accounts / denied_roles`
+6. 由 Security 先执行 `bind_history_samples`，把 Navigator 样本绑定到 Burp `history_entry_id`
+7. 由 Security 紧接着测试“前序已探索过、且当前账号应无权限”的 ready 样本 backlog；若无目标则返回 `success/no_targets`
+8. 由 Coordinator 整理未完成的 `permission_key + sample_id + target_account_id`，决定继续下一账号轮次、进入补轮次 / `FINAL_STAGE`，或结束
 
 补充约束：
 - 不允许“所有账号先跑 Navigator，最后统一跑 Security”

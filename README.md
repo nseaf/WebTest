@@ -76,16 +76,17 @@ Skills 是可复用的方法论模块，位于 `.opencode/skills/`：
 ## 关键特性
 
 - **Permission-First 流程** - 先建立权限基线与 `result/permission_targets.json`，再按权限点驱动账号/角色轮次
-- **按账号双阶段轮次** - 每个账号都必须执行 `Navigator 取证 -> Security denied replay -> Coordinator 评估`
+- **按账号双阶段轮次** - 每个账号都必须执行 `Navigator 取证 -> Security history 绑定 + denied replay -> Coordinator 评估`
 - **按需登录** - 不再预登录全部账号，只为当前高价值权限点按需登录相关角色
 - **多Chrome实例管理** - 仍保留多实例能力，但默认用于按需角色轮次，而不是统一多账号保活
 - **统一Chrome启动参数** - 通过 `scripts/start-managed-chrome.ps1` 固定追加 `--no-first-run` 与 `--no-default-browser-check`
 - **Survey-First 流程** - 新会话先执行 `SITE_SURVEY`，输出模块、角色可达性与覆盖缺口，再进入定向探索或安全测试
 - **登录职责收敛** - Navigator 统一负责登录、会话判活、快速复登与 Cookie 同步
 - **认证恢复闭环** - Security 发现 `AUTH_CONTEXT_STALE` 后由 Navigator 刷新认证并续跑
-- **首轮 Security 也必须执行** - 第一个账号进入 Security 子阶段时，若 denied backlog 为空，返回 `success/no_targets`，但该轮次仍算完整执行
+- **首轮 Security 也必须执行** - 第一个账号进入 Security 子阶段时，先绑定 Navigator 新增接口样本的 `history_entry_id`；若 denied backlog 为空，再返回 `success/no_targets`
 - **Deferred 与 FINAL_STAGE** - 无法立即跨角色验证的权限点先延期，删除/审批/撤销等不可逆动作留在最终专项阶段
-- **补轮次恢复** - 每轮结束都整理未完成的 `permission_key + role/account`，遇到超时、掉线或 auth 失效时优先恢复未完成轮次
+- **接口样本主索引** - Navigator 将接口证据写入 `api_evidence_samples`，Security 绑定 `history_entry_id` 后供后续账号快速 replay
+- **补轮次恢复** - 每轮结束都整理未完成的 `permission_key + sample_id + target_account_id`，遇到超时、掉线或 auth 失效时优先恢复未完成轮次
 - **智能标签页处理** - 点击后自动执行 tab 对账与切换验证
 - **API发现** - 网络请求分析、API模式识别、敏感数据检测
 - **Coordinator 全局审视** - subagent 只提供建议，Coordinator 必须先看全局权限点、缺口与最终专项，不能盲从局部建议
@@ -166,9 +167,10 @@ browser-use doctor
 2. 初始化 `result/permission_targets.json`
 3. 由 Coordinator 选择当前最有价值的账号/角色与 `permission_key`
 4. 仅为当前账号按需登录，并初始化本轮 `navigator phase` 与 `security phase`
-5. 由 Navigator 访问当前账号有权限的页面、接口与操作，并按 `permission_key` 回填 `allowed_roles / allowed_accounts / denied_roles / history_entry_id`
-6. 由 Security 紧接着测试“前序已探索过、且当前账号应无权限”的 denied backlog；若首轮或当前轮无目标，则返回 `success/no_targets`
-7. 由 Coordinator 整理未完成的 `permission_key + role/account`，决定继续下一账号轮次、进入补轮次 / `FINAL_STAGE`，或结束
+5. 由 Navigator 访问当前账号有权限的页面、接口与操作，并按 `permission_key` 回填 `api_evidence_samples`、页面证据与 `allowed_roles / allowed_accounts / denied_roles`
+6. 由 Security 先执行 `bind_history_samples`，把 Navigator 样本绑定到 Burp `history_entry_id`
+7. 由 Security 紧接着测试“前序已探索过、且当前账号应无权限”的 ready 样本 backlog；若首轮或当前轮无目标，则返回 `success/no_targets`
+8. 由 Coordinator 整理未完成的 `permission_key + sample_id + target_account_id`，决定继续下一账号轮次、进入补轮次 / `FINAL_STAGE`，或结束
 
 补充约束：
 - 不允许“所有账号先跑 Navigator，最后统一跑 Security”
